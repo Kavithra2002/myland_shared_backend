@@ -5,6 +5,7 @@ import {
   createReview,
   deleteReview,
   listReviews,
+  pingDb,
   updateReviewStatus,
 } from './db.js';
 
@@ -13,6 +14,15 @@ const PORT = Number(process.env.PORT || 5000);
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/api/health', async (_req, res) => {
+  try {
+    await pingDb();
+    res.json({ ok: true, db: 'connected' });
+  } catch {
+    res.status(503).json({ ok: false, db: 'not connected' });
+  }
+});
 
 app.get('/api/reviews', async (req, res) => {
   try {
@@ -96,16 +106,15 @@ app.delete('/api/reviews/:id', async (req, res) => {
 });
 
 async function start() {
+  console.log('backend starting');
   try {
     await connectDb();
-    console.log('DB is connected');
   } catch (err) {
-    console.log('DB is not connected');
     console.error(err.message);
   }
 
   app.listen(PORT, () => {
-    console.log(`Shared backend running on http://localhost:${PORT}`);
+    console.log('backend started');
   });
 }
 

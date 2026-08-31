@@ -123,6 +123,15 @@ async function seedReviewsIfEmpty() {
   }
 }
 
+export async function pingDb() {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT 1');
+  } finally {
+    client.release();
+  }
+}
+
 export async function connectDb() {
   const client = await pool.connect();
   try {
