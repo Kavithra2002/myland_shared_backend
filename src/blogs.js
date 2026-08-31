@@ -1,7 +1,10 @@
-import { pool } from './db.js';
+﻿import { pool } from './db.js';
 
 const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, read_time,
-  featured, layout, sort_order, published, published_at, created_at, updated_at`;
+  featured, layout, sort_order, published, published_at, created_at, updated_at,
+  placement, status`;
+
+const PLACEMENTS = ['cover', 'features', 'index'];
 
 const SEED_POSTS = [
   {
@@ -12,7 +15,7 @@ const SEED_POSTS = [
       'Survey plans, deed history, and the red flags we refuse to list — so you are not discovering them after reservation.',
     body: `A plot can look perfect from the road and still be the wrong buy if the deed is not clean. We start with the survey plan, then walk the chain of title until every transfer is accounted for.
 
-Red flags we will not list: overlapping plans, unsigned partitions, and “the lawyer is still checking” with no date attached. If those show up, the listing stays off Find Land.
+Red flags we will not list: overlapping plans, unsigned partitions, and "the lawyer is still checking" with no date attached. If those show up, the listing stays off Find Land.
 
 When you book a MyLand site visit, the advisor brings the same pack we used to approve the project — so the paperwork conversation happens on the ground, not after you have already reserved.`,
     topic: 'Titles',
@@ -22,6 +25,7 @@ When you book a MyLand site visit, the advisor brings the same pack we used to a
     featured: true,
     layout: 'auto',
     sortOrder: 0,
+    placement: 'cover',
     publishedAt: '2023-12-12T08:00:00.000Z',
   },
   {
@@ -30,7 +34,7 @@ When you book a MyLand site visit, the advisor brings the same pack we used to a
     title: 'Finding your slice of paradise without the paperwork fog',
     excerpt:
       'What to look for on a first site visit — road access, deed clarity, and the questions that separate a good plot from a rushed one.',
-    body: `The first site visit is not a brochure walk. Ask how you reach the plot in monsoon, where the deed line actually sits, and whether three-phase power is on site or “coming soon”.
+    body: `The first site visit is not a brochure walk. Ask how you reach the plot in monsoon, where the deed line actually sits, and whether three-phase power is on site or "coming soon".
 
 We pause at the boundary stones, the drain, and the nearest public road. Those three minutes usually tell you more than a drone video.
 
@@ -42,6 +46,7 @@ If a seller rushes you past the plan, that is the signal. MyLand listings are wa
     featured: false,
     layout: 'image-left',
     sortOrder: 1,
+    placement: 'features',
     publishedAt: '2024-05-08T08:00:00.000Z',
   },
   {
@@ -62,6 +67,7 @@ We mark mixed-use listings clearly so you are not converting a quiet residential
     featured: false,
     layout: 'image-right',
     sortOrder: 2,
+    placement: 'features',
     publishedAt: '2024-04-22T08:00:00.000Z',
   },
   {
@@ -72,7 +78,7 @@ We mark mixed-use listings clearly so you are not converting a quiet residential
       'A practical comparison of commute, plot size, and starting price across the two corridors most MyLand families ask about.',
     body: `Most first-time buyers are choosing between a larger Gampaha plot and a shorter Colombo commute. There is no universal winner — only the one that matches school runs, work, and budget.
 
-We compare perch size, asking price, and the real drive at 7:30am, not the map’s optimistic minutes.
+We compare perch size, asking price, and the real drive at 7:30am, not the map's optimistic minutes.
 
 Book two visits on the same weekend if you can. Walking both corridors back to back is the fastest way to decide.`,
     topic: 'Districts',
@@ -82,6 +88,7 @@ Book two visits on the same weekend if you can. Walking both corridors back to b
     featured: false,
     layout: 'auto',
     sortOrder: 3,
+    placement: 'index',
     publishedAt: '2024-03-18T08:00:00.000Z',
   },
   {
@@ -102,6 +109,7 @@ A MyLand advisor can tell you which of our listings already have packs banks hav
     featured: false,
     layout: 'auto',
     sortOrder: 4,
+    placement: 'index',
     publishedAt: '2024-02-09T08:00:00.000Z',
   },
   {
@@ -122,6 +130,7 @@ We keep visits unhurried on purpose. The goal is that you leave with questions a
     featured: false,
     layout: 'auto',
     sortOrder: 5,
+    placement: 'index',
     publishedAt: '2024-01-24T08:00:00.000Z',
   },
 ];
@@ -171,11 +180,66 @@ function mapBlog(row) {
     layout: row.layout || 'auto',
     sortOrder: row.sort_order,
     published: Boolean(row.published),
+    placement: PLACEMENTS.includes(row.placement) ? row.placement : 'index',
+    status: row.status === 'deleted' ? 'deleted' : 'active',
     publishedAt: isoDate(row.published_at),
     createdAt: isoDate(row.created_at),
     updatedAt: isoDate(row.updated_at),
     date: formatDisplayDate(row.published_at),
   };
+}
+
+export async function migrateBlogsSchema() {
+  await pool.query(`
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS placement TEXT NOT NULL DEFAULT 'index';
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE
+      conname text;
+    BEGIN
+      FOR conname IN
+        SELECT c.conname
+          FROM pg_constraint c
+          JOIN pg_class t ON c.conrelid = t.oid
+         WHERE t.relname = 'blogs'
+           AND c.contype = 'c'
+           AND (
+             pg_get_constraintdef(c.oid) ILIKE '%placement%'
+             OR pg_get_constraintdef(c.oid) ILIKE '%status%'
+           )
+      LOOP
+        EXECUTE format('ALTER TABLE blogs DROP CONSTRAINT IF EXISTS %I', conname);
+      END LOOP;
+    END $$;
+    ALTER TABLE blogs ADD CONSTRAINT blogs_placement_check
+      CHECK (placement IN ('cover', 'features', 'index'));
+    ALTER TABLE blogs ADD CONSTRAINT blogs_status_check
+      CHECK (status IN ('active', 'deleted'));
+  `);
+  await backfillPlacements();
+}
+
+async function backfillPlacements() {
+  const { rows: covers } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM blogs WHERE placement = 'cover' AND status = 'active'`
+  );
+  if (covers[0].count > 0) return;
+
+  const { rows } = await pool.query(
+    `SELECT id, featured FROM blogs WHERE status = 'active'
+     ORDER BY featured DESC, sort_order ASC, published_at DESC`
+  );
+  if (!rows.length) return;
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const placement = i === 0 ? 'cover' : i <= 2 ? 'features' : 'index';
+    await pool.query(
+      `UPDATE blogs SET placement = $2, featured = $3 WHERE id = $1`,
+      [rows[i].id, placement, placement === 'cover']
+    );
+  }
 }
 
 export async function seedBlogsIfEmpty() {
@@ -186,8 +250,9 @@ export async function seedBlogsIfEmpty() {
     await pool.query(
       `INSERT INTO blogs (
          id, slug, title, excerpt, body, topic, image_url, read_time,
-         featured, layout, sort_order, published, published_at, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, $12, $12, $12)
+         featured, layout, sort_order, published, published_at, created_at, updated_at,
+         placement, status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, $12, $12, $12, $13, 'active')
        ON CONFLICT (id) DO NOTHING`,
       [
         post.id,
@@ -202,24 +267,34 @@ export async function seedBlogsIfEmpty() {
         post.layout,
         post.sortOrder,
         post.publishedAt,
+        post.placement || 'index',
       ]
     );
   }
 }
 
-export async function listBlogs({ published } = {}) {
+export async function listBlogs({ published, status } = {}) {
   const params = [];
   const where = [];
   if (published === true) {
     where.push('published = TRUE');
+    where.push(`status = 'active'`);
   } else if (published === false) {
     where.push('published = FALSE');
+  }
+  if (status) {
+    params.push(status);
+    where.push(`status = $${params.length}`);
   }
   const sql = `
     SELECT ${BLOG_COLUMNS}
     FROM blogs
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY sort_order ASC, published_at DESC, created_at DESC
+    ORDER BY
+      CASE placement WHEN 'cover' THEN 0 WHEN 'features' THEN 1 ELSE 2 END,
+      sort_order ASC,
+      published_at DESC,
+      created_at DESC
   `;
   const { rows } = await pool.query(sql, params);
   return rows.map(mapBlog);
@@ -232,7 +307,7 @@ export async function getBlog(idOrSlug, { publicOnly = false } = {}) {
   );
   const blog = rows[0] ? mapBlog(rows[0]) : null;
   if (!blog) return null;
-  if (publicOnly && !blog.published) return null;
+  if (publicOnly && (!blog.published || blog.status === 'deleted')) return null;
   return blog;
 }
 
@@ -257,8 +332,58 @@ async function nextSortOrder() {
   return rows[0].next;
 }
 
-async function clearOtherFeatured(id) {
-  await pool.query('UPDATE blogs SET featured = FALSE WHERE id <> $1', [id]);
+async function trimFeatures(keepId) {
+  const { rows } = await pool.query(
+    `SELECT id FROM blogs
+      WHERE placement = 'features' AND status = 'active'
+      ORDER BY sort_order ASC, published_at DESC`
+  );
+  const keep = keepId ? [keepId, ...rows.map((row) => row.id).filter((id) => id !== keepId)] : rows.map((row) => row.id);
+  const extra = keep.slice(2);
+  for (const id of extra) {
+    await pool.query(
+      `UPDATE blogs SET placement = 'index', featured = FALSE, updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+  }
+}
+
+export async function setBlogPlacement(id, placement) {
+  if (!PLACEMENTS.includes(placement)) return null;
+  const current = await getBlog(id);
+  if (!current || current.status === 'deleted') return null;
+
+  if (placement === 'cover') {
+    await pool.query(
+      `UPDATE blogs
+          SET placement = 'features', featured = FALSE, updated_at = NOW()
+        WHERE placement = 'cover' AND status = 'active' AND id <> $1`,
+      [id]
+    );
+    await pool.query(
+      `UPDATE blogs
+          SET placement = 'cover', featured = TRUE, published = TRUE, updated_at = NOW()
+        WHERE id = $1`,
+      [id]
+    );
+    await trimFeatures();
+  } else if (placement === 'features') {
+    await pool.query(
+      `UPDATE blogs
+          SET placement = 'features', featured = FALSE, updated_at = NOW()
+        WHERE id = $1`,
+      [id]
+    );
+    await trimFeatures(id);
+  } else {
+    await pool.query(
+      `UPDATE blogs
+          SET placement = 'index', featured = FALSE, updated_at = NOW()
+        WHERE id = $1`,
+      [id]
+    );
+  }
+  return getBlog(id);
 }
 
 export async function createBlog(input) {
@@ -271,7 +396,8 @@ export async function createBlog(input) {
     ? input.layout
     : 'auto';
   const published = input.published !== false;
-  const featured = Boolean(input.featured);
+  const placement = PLACEMENTS.includes(input.placement) ? input.placement : 'index';
+  const featured = placement === 'cover';
   const readTime =
     String(input.readTime || '').trim() || estimateReadTime(`${excerpt} ${body}`);
   const slug = await uniqueSlug(slugify(input.slug || title) || `post-${Date.now().toString(36)}`);
@@ -285,8 +411,9 @@ export async function createBlog(input) {
   const { rows } = await pool.query(
     `INSERT INTO blogs (
        id, slug, title, excerpt, body, topic, image_url, read_time,
-       featured, layout, sort_order, published, published_at, created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+       featured, layout, sort_order, published, published_at, created_at, updated_at,
+       placement, status
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW(), $14, 'active')
      RETURNING ${BLOG_COLUMNS}`,
     [
       id,
@@ -302,11 +429,12 @@ export async function createBlog(input) {
       sortOrder,
       published,
       publishedAt,
+      placement,
     ]
   );
   const blog = mapBlog(rows[0]);
-  if (featured) await clearOtherFeatured(blog.id);
-  return blog;
+  if (placement !== 'index') await setBlogPlacement(blog.id, placement);
+  return getBlog(blog.id);
 }
 
 export async function updateBlog(id, input) {
@@ -325,7 +453,9 @@ export async function updateBlog(id, input) {
     ? input.layout
     : current.layout;
   const published = input.published != null ? Boolean(input.published) : current.published;
-  const featured = input.featured != null ? Boolean(input.featured) : current.featured;
+  const status = input.status === 'deleted' || input.status === 'active' ? input.status : current.status;
+  const placement = PLACEMENTS.includes(input.placement) ? input.placement : current.placement;
+  const featured = placement === 'cover' && status === 'active';
   const readTime =
     input.readTime != null && String(input.readTime).trim()
       ? String(input.readTime).trim()
@@ -354,6 +484,8 @@ export async function updateBlog(id, input) {
        sort_order = $11,
        published = $12,
        published_at = $13,
+       placement = $14,
+       status = $15,
        updated_at = NOW()
      WHERE id = $1
      RETURNING ${BLOG_COLUMNS}`,
@@ -369,37 +501,53 @@ export async function updateBlog(id, input) {
       featured,
       layout,
       sortOrder,
-      published,
+      status === 'deleted' ? false : published,
       publishedAt,
+      status === 'deleted' ? current.placement : placement,
+      status,
     ]
   );
   const blog = rows[0] ? mapBlog(rows[0]) : null;
-  if (blog && featured) await clearOtherFeatured(blog.id);
+  if (blog && status === 'active' && placement !== current.placement) {
+    return setBlogPlacement(blog.id, placement);
+  }
   return blog;
 }
 
 export async function deleteBlog(id) {
-  const { rowCount } = await pool.query('DELETE FROM blogs WHERE id = $1', [id]);
-  return rowCount > 0;
+  const { rows } = await pool.query(
+    `UPDATE blogs
+        SET status = 'deleted',
+            published = FALSE,
+            featured = FALSE,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${BLOG_COLUMNS}`,
+    [id]
+  );
+  return rows[0] ? mapBlog(rows[0]) : null;
 }
 
 export async function reorderBlog(id, direction) {
-  const blogs = await listBlogs();
+  const current = await getBlog(id);
+  if (!current) return null;
+  const blogs = (await listBlogs()).filter(
+    (item) => item.status === 'active' && item.placement === current.placement
+  );
   const index = blogs.findIndex((item) => item.id === id);
   if (index < 0) return null;
   const swapWith = direction === 'up' ? index - 1 : index + 1;
-  if (swapWith < 0 || swapWith >= blogs.length) return blogs[index];
+  if (swapWith < 0 || swapWith >= blogs.length) return current;
 
-  const ordered = blogs.map((item, i) => ({ ...item, sortOrder: i }));
-  const temp = ordered[index].sortOrder;
-  ordered[index].sortOrder = ordered[swapWith].sortOrder;
-  ordered[swapWith].sortOrder = temp;
-
-  for (const item of ordered) {
-    await pool.query('UPDATE blogs SET sort_order = $2, updated_at = NOW() WHERE id = $1', [
-      item.id,
-      item.sortOrder,
-    ]);
-  }
+  const a = blogs[index];
+  const b = blogs[swapWith];
+  await pool.query('UPDATE blogs SET sort_order = $2, updated_at = NOW() WHERE id = $1', [
+    a.id,
+    b.sortOrder,
+  ]);
+  await pool.query('UPDATE blogs SET sort_order = $2, updated_at = NOW() WHERE id = $1', [
+    b.id,
+    a.sortOrder,
+  ]);
   return getBlog(id);
 }

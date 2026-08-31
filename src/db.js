@@ -65,7 +65,11 @@ CREATE TABLE IF NOT EXISTS blogs (
   published BOOLEAN NOT NULL DEFAULT TRUE,
   published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  placement TEXT NOT NULL DEFAULT 'index'
+    CHECK (placement IN ('cover', 'features', 'index')),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'deleted'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_blogs_sort

@@ -13,8 +13,10 @@ import {
   deleteBlog,
   getBlog,
   listBlogs,
+  migrateBlogsSchema,
   reorderBlog,
   seedBlogsIfEmpty,
+  setBlogPlacement,
   updateBlog,
 } from './blogs.js';
 
@@ -168,6 +170,9 @@ function validateBlogPayload(body, { partial = false } = {}) {
   if (body.layout != null && !['auto', 'image-left', 'image-right'].includes(body.layout)) {
     return 'Invalid layout.';
   }
+  if (body.placement != null && !['cover', 'features', 'index'].includes(body.placement)) {
+    return 'Invalid blog section.';
+  }
   return null;
 }
 
@@ -218,14 +223,33 @@ app.post('/api/blogs/:id/reorder', async (req, res) => {
   }
 });
 
-app.delete('/api/blogs/:id', async (req, res) => {
+app.post('/api/blogs/:id/place', async (req, res) => {
   try {
-    const ok = await deleteBlog(req.params.id);
-    if (!ok) {
+    const placement = req.body.placement;
+    if (!['cover', 'features', 'index'].includes(placement)) {
+      res.status(400).json({ message: 'Invalid blog section.' });
+      return;
+    }
+    const blog = await setBlogPlacement(req.params.id, placement);
+    if (!blog) {
       res.status(404).json({ message: 'Blog not found.' });
       return;
     }
-    res.json({ ok: true });
+    const blogs = await listBlogs();
+    res.json({ blog, blogs });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not move blog' });
+  }
+});
+
+app.delete('/api/blogs/:id', async (req, res) => {
+  try {
+    const blog = await deleteBlog(req.params.id);
+    if (!blog) {
+      res.status(404).json({ message: 'Blog not found.' });
+      return;
+    }
+    res.json({ ok: true, blog });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not delete blog' });
   }
@@ -235,6 +259,7 @@ async function start() {
   console.log('backend starting');
   try {
     await connectDb();
+    await migrateBlogsSchema();
     await seedBlogsIfEmpty();
   } catch (err) {
     console.error(err.message);
