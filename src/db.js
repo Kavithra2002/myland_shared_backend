@@ -11,18 +11,55 @@ const rootDir = path.resolve(backendDir, '..');
 dotenv.config({ path: path.join(backendDir, '.env') });
 dotenv.config({ path: path.join(rootDir, '.env') });
 
-const config = {
-  host: process.env.PGHOST || 'localhost',
-  port: Number(process.env.PGPORT || 5432),
-  database: process.env.PGDATABASE || 'postgres',
-  user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD ?? '',
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 8_000,
-};
+function isLocalHost(host) {
+  return !host || host === 'localhost' || host === '127.0.0.1';
+}
 
-export const pool = new pg.Pool(config);
+function buildSsl() {
+  const mode = String(process.env.PGSSLMODE || '').toLowerCase();
+  if (mode === 'disable' || process.env.PGSSL === 'false') return false;
+
+  const host = process.env.PGHOST || '';
+  const remote =
+    Boolean(process.env.DATABASE_URL) ||
+    process.env.PGSSL === 'true' ||
+    mode === 'require' ||
+    Boolean(process.env.CA_CERT) ||
+    !isLocalHost(host);
+
+  if (!remote) return false;
+
+  const ssl = {
+    rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false',
+  };
+  if (process.env.CA_CERT) {
+    ssl.ca = process.env.CA_CERT.replace(/\\n/g, '\n');
+  }
+  return ssl;
+}
+
+const ssl = buildSsl();
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 8_000,
+    }
+  : {
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT || 5432),
+      database: process.env.PGDATABASE || 'postgres',
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD ?? '',
+      ssl,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 8_000,
+    };
+
+export const pool = new pg.Pool(poolConfig);
 
 const CREATE_SQL = `
 CREATE TABLE IF NOT EXISTS reviews (

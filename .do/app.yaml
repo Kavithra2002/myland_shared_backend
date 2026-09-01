@@ -1,0 +1,82 @@
+# Canonical App Platform spec for MyLand (API + both static sites + Postgres).
+# Create this app in the myland_web project (App Platform, not Droplets/AI).
+name: myland-web
+region: sgp
+
+services:
+  - name: api
+    github:
+      repo: Kavithra2002/myland_shared_backend
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 8080
+    run_command: npm start
+    health_check:
+      http_path: /api/health
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PGHOST
+        value: ${myland-db.HOSTNAME}
+      - key: PGPORT
+        value: ${myland-db.PORT}
+      - key: PGDATABASE
+        value: ${myland-db.DATABASE}
+      - key: PGUSER
+        value: ${myland-db.USERNAME}
+      - key: PGPASSWORD
+        value: ${myland-db.PASSWORD}
+        type: SECRET
+      - key: DATABASE_URL
+        value: ${myland-db.DATABASE_URL}
+        type: SECRET
+      - key: CA_CERT
+        value: ${myland-db.CA_CERT}
+        type: SECRET
+      - key: PGSSLMODE
+        value: require
+      - key: CORS_ORIGINS
+        value: ${client.PUBLIC_URL},${admin.PUBLIC_URL}
+
+static_sites:
+  - name: client
+    github:
+      repo: Kavithra2002/myland_wesite_frontend
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm run build
+    output_dir: dist
+    index_document: index.html
+    catchall_document: index.html
+    envs:
+      - key: VITE_API_URL
+        scope: BUILD_TIME
+        value: ${api.PUBLIC_URL}
+
+  - name: admin
+    github:
+      repo: Kavithra2002/myland_admin_frontend
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm run build
+    output_dir: dist
+    index_document: index.html
+    catchall_document: index.html
+    envs:
+      - key: VITE_API_URL
+        scope: BUILD_TIME
+        value: ${api.PUBLIC_URL}
+
+databases:
+  - name: myland-db
+    engine: PG
+    version: "16"
+    production: true

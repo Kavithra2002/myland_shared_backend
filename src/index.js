@@ -25,7 +25,22 @@ import { openApiSpec } from './swagger.js';
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
 
-app.use(cors());
+function corsOrigin() {
+  const allowed = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  if (!allowed.length) return true;
+  return (origin, callback) => {
+    if (!origin || allowed.includes(origin.replace(/\/$/, ''))) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  };
+}
+
+app.use(cors({ origin: corsOrigin() }));
 app.use(express.json({ limit: '2mb' }));
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
@@ -275,7 +290,7 @@ async function start() {
     console.error(err.message);
   }
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log('backend started');
     console.log(`swagger ui: http://localhost:${PORT}/api-docs`);
   });
