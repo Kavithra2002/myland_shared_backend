@@ -45,7 +45,7 @@ services:
 static_sites:
   - name: client
     github:
-      repo: Kavithra2002/myland_wesite_frontend
+      repo: Kavithra2002/myland_client_frontend
       branch: main
       deploy_on_push: true
     source_dir: /
