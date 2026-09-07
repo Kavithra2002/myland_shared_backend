@@ -14,6 +14,8 @@ export const openApiSpec = {
   ],
   tags: [
     { name: 'Health', description: 'Database connectivity' },
+    { name: 'Auth', description: 'Admin sign in' },
+    { name: 'Users', description: 'Admin user management (soft delete)' },
     { name: 'Reviews', description: 'Project reviews and moderation' },
     { name: 'Blogs', description: 'Journal posts and placement' },
   ],
@@ -41,6 +43,164 @@ export const openApiSpec = {
               },
             },
           },
+        },
+      },
+    },
+    '/api/auth/login': {
+      post: {
+        tags: ['Auth'],
+        summary: 'Sign in to the admin site',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/LoginRequest' },
+              example: { email: 'admintest01@gmail.com', password: 'admintest01' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Session created',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AuthSession' },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/auth/me': {
+      get: {
+        tags: ['Auth'],
+        summary: 'Current signed-in user',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'Current user',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { user: { $ref: '#/components/schemas/User' } },
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/users': {
+      get: {
+        tags: ['Users'],
+        summary: 'List users (admin)',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['active', 'deleted'] },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'User list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    users: { type: 'array', items: { $ref: '#/components/schemas/User' } },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+          403: { $ref: '#/components/responses/Error' },
+        },
+      },
+      post: {
+        tags: ['Users'],
+        summary: 'Add a user (admin)',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateUser' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'User created',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { user: { $ref: '#/components/schemas/User' } },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          403: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/users/{id}': {
+      patch: {
+        tags: ['Users'],
+        summary: 'Edit a user (admin)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/NumericId' }],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateUser' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'User updated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { user: { $ref: '#/components/schemas/User' } },
+                },
+              },
+            },
+          },
+          404: { $ref: '#/components/responses/Error' },
+        },
+      },
+      delete: {
+        tags: ['Users'],
+        summary: 'Soft-delete a user (sets user_status = deleted)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/NumericId' }],
+        responses: {
+          200: {
+            description: 'User marked deleted',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                    user: { $ref: '#/components/schemas/User' },
+                  },
+                },
+              },
+            },
+          },
+          404: { $ref: '#/components/responses/Error' },
         },
       },
     },
@@ -451,12 +611,25 @@ export const openApiSpec = {
     },
   },
   components: {
+    securitySchemes: {
+      BearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+    },
     parameters: {
       Id: {
         name: 'id',
         in: 'path',
         required: true,
         schema: { type: 'string' },
+      },
+      NumericId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        schema: { type: 'integer' },
       },
     },
     responses: {
@@ -488,6 +661,54 @@ export const openApiSpec = {
         properties: {
           ok: { type: 'boolean', example: false },
           db: { type: 'string', example: 'not connected' },
+        },
+      },
+      User: {
+        type: 'object',
+        properties: {
+          userId: { type: 'integer' },
+          name: { type: 'string' },
+          email: { type: 'string' },
+          role: { type: 'string', enum: ['user', 'admin'] },
+          userStatus: { type: 'string', enum: ['active', 'deleted'] },
+          createdDate: { type: 'string', format: 'date-time' },
+          updateDate: { type: 'string', format: 'date-time' },
+          plainPassword: { type: 'string', description: 'Stored for testing only' },
+        },
+      },
+      LoginRequest: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string' },
+        },
+      },
+      AuthSession: {
+        type: 'object',
+        properties: {
+          token: { type: 'string' },
+          user: { $ref: '#/components/schemas/User' },
+        },
+      },
+      CreateUser: {
+        type: 'object',
+        required: ['name', 'email', 'password'],
+        properties: {
+          name: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 8 },
+          role: { type: 'string', enum: ['user', 'admin'] },
+        },
+      },
+      UpdateUser: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 8 },
+          role: { type: 'string', enum: ['user', 'admin'] },
+          userStatus: { type: 'string', enum: ['active', 'deleted'] },
         },
       },
       Review: {

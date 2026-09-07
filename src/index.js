@@ -20,6 +20,18 @@ import {
   setBlogPlacement,
   updateBlog,
 } from './blogs.js';
+import { optionalAuth, requireAdmin, requireAuth } from './auth.js';
+import {
+  authenticateUser,
+  createUser,
+  findActiveUserById,
+  listUsers,
+  migrateUsersSchema,
+  seedTestUsers,
+  softDeleteUser,
+  updateUser,
+  validateUserInput,
+} from './users.js';
 import { openApiSpec } from './swagger.js';
 
 const app = express();
@@ -60,11 +72,115 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-app.get('/api/reviews', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
+    const email = String(req.body.email || '').trim();
+    const password = String(req.body.password || '');
+    if (!email || !password) {
+      res.status(400).json({ message: 'Email and password are required.' });
+      return;
+    }
+    const result = await authenticateUser(email, password);
+    if (result.error) {
+      res.status(401).json({ message: result.error });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not sign in' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  try {
+    const row = await findActiveUserById(req.user.userId);
+    if (!row) {
+      res.status(401).json({ message: 'Please sign in.' });
+      return;
+    }
+    res.json({ user: req.user });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load session' });
+  }
+});
+
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await listUsers({ status: req.query.status || undefined });
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load users' });
+  }
+});
+
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const error = validateUserInput(req.body, { requirePassword: true });
+    if (error) {
+      res.status(400).json({ message: error });
+      return;
+    }
+    const user = await createUser(req.body, { allowRole: true });
+    res.status(201).json({ user });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not create user' });
+  }
+});
+
+app.patch('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId)) {
+      res.status(400).json({ message: 'Invalid user id.' });
+      return;
+    }
+    const error = validateUserInput(req.body, {
+      partial: true,
+      requirePassword: false,
+    });
+    if (error) {
+      res.status(400).json({ message: error });
+      return;
+    }
+    const user = await updateUser(userId, req.body);
+    if (!user) {
+      res.status(404).json({ message: 'User not found.' });
+      return;
+    }
+    res.json({ user });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not update user' });
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isInteger(userId)) {
+      res.status(400).json({ message: 'Invalid user id.' });
+      return;
+    }
+    if (userId === req.user.userId) {
+      res.status(400).json({ message: 'You cannot delete your own account.' });
+      return;
+    }
+    const user = await softDeleteUser(userId);
+    if (!user) {
+      res.status(404).json({ message: 'User not found.' });
+      return;
+    }
+    res.json({ ok: true, user });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not delete user' });
+  }
+});
+
+app.get('/api/reviews', optionalAuth, async (req, res) => {
+  try {
+    const status = req.user ? req.query.status || undefined : 'approved';
     const reviews = await listReviews({
       project: req.query.project || undefined,
-      status: req.query.status || undefined,
+      status,
       home: req.query.home === 'true',
     });
     res.json({ reviews });
@@ -112,7 +228,7 @@ app.post('/api/reviews', async (req, res) => {
   }
 });
 
-app.patch('/api/reviews/:id', async (req, res) => {
+app.patch('/api/reviews/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const nextStatus = req.body.status;
     if (!['approved', 'rejected', 'pending', 'deleted'].includes(nextStatus)) {
@@ -120,8 +236,8 @@ app.patch('/api/reviews/:id', async (req, res) => {
       return;
     }
     const review = await updateReviewStatus(req.params.id, nextStatus, {
-      authorizerId: String(req.body.authorizerId || '').trim() || undefined,
-      authorizerName: String(req.body.authorizerName || '').trim() || undefined,
+      authorizerId: String(req.user.userId),
+      authorizerName: req.user.name,
     });
     if (!review) {
       res.status(404).json({ message: 'Review not found.' });
@@ -133,11 +249,11 @@ app.patch('/api/reviews/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/reviews/:id', async (req, res) => {
+app.delete('/api/reviews/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const review = await deleteReview(req.params.id, {
-      authorizerId: String(req.body?.authorizerId || '').trim() || undefined,
-      authorizerName: String(req.body?.authorizerName || '').trim() || undefined,
+      authorizerId: String(req.user.userId),
+      authorizerName: req.user.name,
     });
     if (!review) {
       res.status(404).json({ message: 'Review not found.' });
@@ -149,11 +265,13 @@ app.delete('/api/reviews/:id', async (req, res) => {
   }
 });
 
-app.get('/api/blogs', async (req, res) => {
+app.get('/api/blogs', optionalAuth, async (req, res) => {
   try {
     const publishedParam = req.query.published;
-    const published =
-      publishedParam === 'true' ? true : publishedParam === 'false' ? false : undefined;
+    let published;
+    if (publishedParam === 'true') published = true;
+    else if (publishedParam === 'false') published = req.user ? false : true;
+    else published = req.user ? undefined : true;
     const blogs = await listBlogs({ published });
     res.json({ blogs });
   } catch (err) {
@@ -201,28 +319,33 @@ function validateBlogPayload(body, { partial = false } = {}) {
   return null;
 }
 
-app.post('/api/blogs', async (req, res) => {
+app.post('/api/blogs', requireAuth, async (req, res) => {
   try {
     const error = validateBlogPayload(req.body);
     if (error) {
       res.status(400).json({ message: error });
       return;
     }
-    const blog = await createBlog(req.body);
+    const blog = await createBlog(req.body, { actorRole: req.user.role });
     res.status(201).json({ blog });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not create blog' });
   }
 });
 
-app.patch('/api/blogs/:id', async (req, res) => {
+app.patch('/api/blogs/:id', requireAuth, async (req, res) => {
   try {
     const error = validateBlogPayload(req.body, { partial: true });
     if (error) {
       res.status(400).json({ message: error });
       return;
     }
-    const blog = await updateBlog(req.params.id, req.body);
+    const wantsPublish = req.body.published === true && req.user.role !== 'admin';
+    if (wantsPublish) {
+      res.status(403).json({ message: 'An admin must approve blog updates before they go live.' });
+      return;
+    }
+    const blog = await updateBlog(req.params.id, req.body, { actorRole: req.user.role });
     if (!blog) {
       res.status(404).json({ message: 'Blog not found.' });
       return;
@@ -233,7 +356,7 @@ app.patch('/api/blogs/:id', async (req, res) => {
   }
 });
 
-app.post('/api/blogs/:id/reorder', async (req, res) => {
+app.post('/api/blogs/:id/reorder', requireAuth, async (req, res) => {
   try {
     const direction = req.body.direction === 'down' ? 'down' : 'up';
     const blog = await reorderBlog(req.params.id, direction);
@@ -248,14 +371,14 @@ app.post('/api/blogs/:id/reorder', async (req, res) => {
   }
 });
 
-app.post('/api/blogs/:id/place', async (req, res) => {
+app.post('/api/blogs/:id/place', requireAuth, async (req, res) => {
   try {
     const placement = req.body.placement;
     if (!['cover', 'features', 'index'].includes(placement)) {
       res.status(400).json({ message: 'Invalid blog section.' });
       return;
     }
-    const blog = await setBlogPlacement(req.params.id, placement);
+    const blog = await setBlogPlacement(req.params.id, placement, { actorRole: req.user.role });
     if (!blog) {
       res.status(404).json({ message: 'Blog not found.' });
       return;
@@ -267,7 +390,7 @@ app.post('/api/blogs/:id/place', async (req, res) => {
   }
 });
 
-app.delete('/api/blogs/:id', async (req, res) => {
+app.delete('/api/blogs/:id', requireAuth, async (req, res) => {
   try {
     const blog = await deleteBlog(req.params.id);
     if (!blog) {
@@ -284,6 +407,8 @@ async function start() {
   console.log('backend starting');
   try {
     await connectDb();
+    await migrateUsersSchema();
+    await seedTestUsers();
     await migrateBlogsSchema();
     await seedBlogsIfEmpty();
   } catch (err) {

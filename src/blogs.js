@@ -348,10 +348,11 @@ async function trimFeatures(keepId) {
   }
 }
 
-export async function setBlogPlacement(id, placement) {
+export async function setBlogPlacement(id, placement, { actorRole } = {}) {
   if (!PLACEMENTS.includes(placement)) return null;
   const current = await getBlog(id);
   if (!current || current.status === 'deleted') return null;
+  const canPublish = actorRole !== 'user';
 
   if (placement === 'cover') {
     await pool.query(
@@ -362,9 +363,9 @@ export async function setBlogPlacement(id, placement) {
     );
     await pool.query(
       `UPDATE blogs
-          SET placement = 'cover', featured = TRUE, published = TRUE, updated_at = NOW()
+          SET placement = 'cover', featured = TRUE, published = $2, updated_at = NOW()
         WHERE id = $1`,
-      [id]
+      [id, canPublish ? true : current.published]
     );
     await trimFeatures();
   } else if (placement === 'features') {
@@ -386,7 +387,7 @@ export async function setBlogPlacement(id, placement) {
   return getBlog(id);
 }
 
-export async function createBlog(input) {
+export async function createBlog(input, { actorRole } = {}) {
   const title = String(input.title || '').trim();
   const excerpt = String(input.excerpt || '').trim();
   const body = String(input.body || '').trim();
@@ -395,7 +396,7 @@ export async function createBlog(input) {
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
     : 'auto';
-  const published = input.published !== false;
+  const published = actorRole === 'user' ? false : input.published !== false;
   const placement = PLACEMENTS.includes(input.placement) ? input.placement : 'index';
   const featured = placement === 'cover';
   const readTime =
@@ -433,11 +434,11 @@ export async function createBlog(input) {
     ]
   );
   const blog = mapBlog(rows[0]);
-  if (placement !== 'index') await setBlogPlacement(blog.id, placement);
+  if (placement !== 'index') await setBlogPlacement(blog.id, placement, { actorRole });
   return getBlog(blog.id);
 }
 
-export async function updateBlog(id, input) {
+export async function updateBlog(id, input, { actorRole } = {}) {
   const current = await getBlog(id);
   if (!current) return null;
 
@@ -452,7 +453,12 @@ export async function updateBlog(id, input) {
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
     : current.layout;
-  const published = input.published != null ? Boolean(input.published) : current.published;
+  const published =
+    actorRole === 'user'
+      ? false
+      : input.published != null
+        ? Boolean(input.published)
+        : current.published;
   const status = input.status === 'deleted' || input.status === 'active' ? input.status : current.status;
   const placement = PLACEMENTS.includes(input.placement) ? input.placement : current.placement;
   const featured = placement === 'cover' && status === 'active';
@@ -509,7 +515,7 @@ export async function updateBlog(id, input) {
   );
   const blog = rows[0] ? mapBlog(rows[0]) : null;
   if (blog && status === 'active' && placement !== current.placement) {
-    return setBlogPlacement(blog.id, placement);
+    return setBlogPlacement(blog.id, placement, { actorRole });
   }
   return blog;
 }
