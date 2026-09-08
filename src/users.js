@@ -197,6 +197,20 @@ export async function listUsers({ status } = {}) {
   return rows.map((row) => publicUser(row, { includePlainPassword: true }));
 }
 
+export async function listAdmins() {
+  const { rows } = await pool.query(
+    `SELECT user_id, name, email
+       FROM users
+      WHERE role = 'admin' AND user_status = 'active'
+      ORDER BY name ASC, user_id ASC`
+  );
+  return rows.map((row) => ({
+    userId: row.user_id,
+    name: row.name,
+    email: row.email,
+  }));
+}
+
 export async function createUser(input, { allowRole = false } = {}) {
   const name = normalizeName(input.name);
   const email = normalizeEmail(input.email);

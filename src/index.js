@@ -16,8 +16,10 @@ import {
   listBlogs,
   migrateBlogsSchema,
   reorderBlog,
+  reviewBlogChange,
   seedBlogsIfEmpty,
   setBlogPlacement,
+  submitBlogChange,
   updateBlog,
 } from './blogs.js';
 import { optionalAuth, requireAdmin, requireAuth } from './auth.js';
@@ -25,6 +27,7 @@ import {
   authenticateUser,
   createUser,
   findActiveUserById,
+  listAdmins,
   listUsers,
   migrateUsersSchema,
   seedTestUsers,
@@ -110,6 +113,15 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
     res.json({ users });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not load users' });
+  }
+});
+
+app.get('/api/admins', requireAuth, async (_req, res) => {
+  try {
+    const admins = await listAdmins();
+    res.json({ admins });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load admins' });
   }
 });
 
@@ -319,7 +331,7 @@ function validateBlogPayload(body, { partial = false } = {}) {
   return null;
 }
 
-app.post('/api/blogs', requireAuth, async (req, res) => {
+app.post('/api/blogs', requireAuth, requireAdmin, async (req, res) => {
   try {
     const error = validateBlogPayload(req.body);
     if (error) {
@@ -333,16 +345,39 @@ app.post('/api/blogs', requireAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/blogs/:id', requireAuth, async (req, res) => {
+app.post('/api/blogs/submit', requireAuth, async (req, res) => {
+  try {
+    if (req.body?.action !== 'delete') {
+      const source = req.body?.payload || req.body;
+      const error = validateBlogPayload(source, {
+        partial: req.body?.action === 'update' || req.body?.action === 'move',
+      });
+      if (error) {
+        res.status(400).json({ message: error });
+        return;
+      }
+    }
+    const blog = await submitBlogChange(req.body, { actor: req.user });
+    res.status(201).json({ blog });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not send for approval' });
+  }
+});
+
+app.post('/api/blogs/:id/review', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const blog = await reviewBlogChange(req.params.id, req.body, { actor: req.user });
+    res.json({ blog });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not review blog' });
+  }
+});
+
+app.patch('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const error = validateBlogPayload(req.body, { partial: true });
     if (error) {
       res.status(400).json({ message: error });
-      return;
-    }
-    const wantsPublish = req.body.published === true && req.user.role !== 'admin';
-    if (wantsPublish) {
-      res.status(403).json({ message: 'An admin must approve blog updates before they go live.' });
       return;
     }
     const blog = await updateBlog(req.params.id, req.body, { actorRole: req.user.role });
@@ -356,7 +391,7 @@ app.patch('/api/blogs/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/blogs/:id/reorder', requireAuth, async (req, res) => {
+app.post('/api/blogs/:id/reorder', requireAuth, requireAdmin, async (req, res) => {
   try {
     const direction = req.body.direction === 'down' ? 'down' : 'up';
     const blog = await reorderBlog(req.params.id, direction);
@@ -371,7 +406,7 @@ app.post('/api/blogs/:id/reorder', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/blogs/:id/place', requireAuth, async (req, res) => {
+app.post('/api/blogs/:id/place', requireAuth, requireAdmin, async (req, res) => {
   try {
     const placement = req.body.placement;
     if (!['cover', 'features', 'index'].includes(placement)) {
@@ -390,7 +425,7 @@ app.post('/api/blogs/:id/place', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/blogs/:id', requireAuth, async (req, res) => {
+app.delete('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const blog = await deleteBlog(req.params.id);
     if (!blog) {

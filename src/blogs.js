@@ -1,8 +1,25 @@
 ﻿import { pool } from './db.js';
+import { findUserById } from './users.js';
 
 const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, read_time,
   featured, layout, sort_order, published, published_at, created_at, updated_at,
-  placement, status`;
+  placement, status, approval_status, pending_action, pending_payload,
+  approver_id, requested_by, approval_message, requested_at, reviewed_at`;
+
+const BLOG_SELECT = `b.id, b.slug, b.title, b.excerpt, b.body, b.topic, b.image_url, b.read_time,
+  b.featured, b.layout, b.sort_order, b.published, b.published_at, b.created_at, b.updated_at,
+  b.placement, b.status, b.approval_status, b.pending_action, b.pending_payload,
+  b.approver_id, b.requested_by, b.approval_message, b.requested_at, b.reviewed_at,
+  requester.name AS requested_by_name,
+  approver.name AS approver_name,
+  approver.email AS approver_email`;
+
+const BLOG_FROM = `blogs b
+  LEFT JOIN users requester ON requester.user_id = b.requested_by
+  LEFT JOIN users approver ON approver.user_id = b.approver_id`;
+
+const APPROVAL_STATUSES = ['pending', 'approved', 'declined'];
+const PENDING_ACTIONS = ['none', 'create', 'update', 'delete', 'move'];
 
 const PLACEMENTS = ['cover', 'features', 'index'];
 
@@ -165,7 +182,27 @@ export function slugify(title) {
     .slice(0, 80);
 }
 
+function parsePayload(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function httpError(message, statusCode) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
+
 function mapBlog(row) {
+  const approvalStatus = APPROVAL_STATUSES.includes(row.approval_status)
+    ? row.approval_status
+    : 'approved';
+  const pendingAction = PENDING_ACTIONS.includes(row.pending_action) ? row.pending_action : 'none';
   return {
     id: row.id,
     slug: row.slug,
@@ -182,6 +219,17 @@ function mapBlog(row) {
     published: Boolean(row.published),
     placement: PLACEMENTS.includes(row.placement) ? row.placement : 'index',
     status: row.status === 'deleted' ? 'deleted' : 'active',
+    approvalStatus,
+    pendingAction,
+    pendingPayload: parsePayload(row.pending_payload),
+    approverId: row.approver_id || undefined,
+    approverName: row.approver_name || undefined,
+    approverEmail: row.approver_email || undefined,
+    requestedBy: row.requested_by || undefined,
+    requestedByName: row.requested_by_name || undefined,
+    approvalMessage: row.approval_message || '',
+    requestedAt: isoDate(row.requested_at),
+    reviewedAt: isoDate(row.reviewed_at),
     publishedAt: isoDate(row.published_at),
     createdAt: isoDate(row.created_at),
     updatedAt: isoDate(row.updated_at),
@@ -193,6 +241,22 @@ export async function migrateBlogsSchema() {
   await pool.query(`
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS placement TEXT NOT NULL DEFAULT 'index';
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS pending_action TEXT NOT NULL DEFAULT 'none';
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS pending_payload JSONB;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS approver_id INTEGER;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS requested_by INTEGER;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS approval_message TEXT;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+  `);
+  await pool.query(`
+    UPDATE blogs
+       SET approval_status = 'pending',
+           pending_action = CASE WHEN pending_action = 'none' THEN 'create' ELSE pending_action END
+     WHERE published = FALSE
+       AND status = 'active'
+       AND approval_status = 'approved'
   `);
   await pool.query(`
     DO $$
@@ -208,6 +272,8 @@ export async function migrateBlogsSchema() {
            AND (
              pg_get_constraintdef(c.oid) ILIKE '%placement%'
              OR pg_get_constraintdef(c.oid) ILIKE '%status%'
+             OR pg_get_constraintdef(c.oid) ILIKE '%approval_status%'
+             OR pg_get_constraintdef(c.oid) ILIKE '%pending_action%'
            )
       LOOP
         EXECUTE format('ALTER TABLE blogs DROP CONSTRAINT IF EXISTS %I', conname);
@@ -217,6 +283,10 @@ export async function migrateBlogsSchema() {
       CHECK (placement IN ('cover', 'features', 'index'));
     ALTER TABLE blogs ADD CONSTRAINT blogs_status_check
       CHECK (status IN ('active', 'deleted'));
+    ALTER TABLE blogs ADD CONSTRAINT blogs_approval_status_check
+      CHECK (approval_status IN ('pending', 'approved', 'declined'));
+    ALTER TABLE blogs ADD CONSTRAINT blogs_pending_action_check
+      CHECK (pending_action IN ('none', 'create', 'update', 'delete', 'move'));
   `);
   await backfillPlacements();
 }
@@ -277,24 +347,24 @@ export async function listBlogs({ published, status } = {}) {
   const params = [];
   const where = [];
   if (published === true) {
-    where.push('published = TRUE');
-    where.push(`status = 'active'`);
+    where.push('b.published = TRUE');
+    where.push(`b.status = 'active'`);
   } else if (published === false) {
-    where.push('published = FALSE');
+    where.push('b.published = FALSE');
   }
   if (status) {
     params.push(status);
-    where.push(`status = $${params.length}`);
+    where.push(`b.status = $${params.length}`);
   }
   const sql = `
-    SELECT ${BLOG_COLUMNS}
-    FROM blogs
+    SELECT ${BLOG_SELECT}
+    FROM ${BLOG_FROM}
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY
-      CASE placement WHEN 'cover' THEN 0 WHEN 'features' THEN 1 ELSE 2 END,
-      sort_order ASC,
-      published_at DESC,
-      created_at DESC
+      CASE b.placement WHEN 'cover' THEN 0 WHEN 'features' THEN 1 ELSE 2 END,
+      b.sort_order ASC,
+      b.published_at DESC,
+      b.created_at DESC
   `;
   const { rows } = await pool.query(sql, params);
   return rows.map(mapBlog);
@@ -302,7 +372,7 @@ export async function listBlogs({ published, status } = {}) {
 
 export async function getBlog(idOrSlug, { publicOnly = false } = {}) {
   const { rows } = await pool.query(
-    `SELECT ${BLOG_COLUMNS} FROM blogs WHERE id = $1 OR slug = $1 LIMIT 1`,
+    `SELECT ${BLOG_SELECT} FROM ${BLOG_FROM} WHERE b.id = $1 OR b.slug = $1 LIMIT 1`,
     [idOrSlug]
   );
   const blog = rows[0] ? mapBlog(rows[0]) : null;
@@ -434,7 +504,9 @@ export async function createBlog(input, { actorRole } = {}) {
     ]
   );
   const blog = mapBlog(rows[0]);
-  if (placement !== 'index') await setBlogPlacement(blog.id, placement, { actorRole });
+  if (placement !== 'index' && published) {
+    await setBlogPlacement(blog.id, placement, { actorRole });
+  }
   return getBlog(blog.id);
 }
 
@@ -555,5 +627,181 @@ export async function reorderBlog(id, direction) {
     b.id,
     a.sortOrder,
   ]);
+  return getBlog(id);
+}
+
+function changePayload(input = {}) {
+  const payload = {};
+  if (input.title != null) payload.title = String(input.title).trim();
+  if (input.slug != null) payload.slug = String(input.slug).trim();
+  if (input.topic != null) payload.topic = String(input.topic).trim();
+  if (input.excerpt != null) payload.excerpt = String(input.excerpt).trim();
+  if (input.body != null) payload.body = String(input.body);
+  if (input.imageUrl != null || input.image != null) {
+    payload.imageUrl = String(input.imageUrl || input.image || '').trim();
+  }
+  if (input.readTime != null) payload.readTime = String(input.readTime).trim();
+  if (input.layout != null) payload.layout = input.layout;
+  if (input.placement != null) payload.placement = input.placement;
+  if (input.publishedAt != null) payload.publishedAt = input.publishedAt;
+  return payload;
+}
+
+async function markPending(id, { action, payload, approverId, requestedBy }) {
+  await pool.query(
+    `UPDATE blogs SET
+       approval_status = 'pending',
+       pending_action = $2,
+       pending_payload = $3::jsonb,
+       approver_id = $4,
+       requested_by = $5,
+       approval_message = NULL,
+       requested_at = NOW(),
+       reviewed_at = NULL,
+       updated_at = NOW()
+     WHERE id = $1`,
+    [id, action, payload ? JSON.stringify(payload) : null, approverId, requestedBy]
+  );
+}
+
+async function requireAdminApprover(approverId) {
+  const id = Number(approverId);
+  if (!Number.isInteger(id)) {
+    throw httpError('Please select an admin to approve this change.', 400);
+  }
+  const admin = await findUserById(id);
+  if (!admin || admin.role !== 'admin' || admin.user_status !== 'active') {
+    throw httpError('That admin is not available.', 400);
+  }
+  return id;
+}
+
+export async function submitBlogChange(input, { actor } = {}) {
+  if (!actor?.userId) throw httpError('Please sign in.', 401);
+  const approverId = await requireAdminApprover(input.approverId);
+  const action = ['create', 'update', 'delete', 'move'].includes(input.action)
+    ? input.action
+    : 'update';
+  const payload = changePayload(input.payload || input);
+
+  if (action === 'create') {
+    if (!payload.title || payload.title.length < 3) throw httpError('Please enter a title.', 400);
+    if (!payload.excerpt || payload.excerpt.length < 8) {
+      throw httpError('Please write a short excerpt.', 400);
+    }
+    if (!payload.imageUrl) throw httpError('Please add a cover image URL.', 400);
+    const blog = await createBlog({ ...payload, published: false }, { actorRole: 'user' });
+    await markPending(blog.id, {
+      action: 'create',
+      payload,
+      approverId,
+      requestedBy: actor.userId,
+    });
+    return getBlog(blog.id);
+  }
+
+  const current = await getBlog(input.blogId || input.id);
+  if (!current || current.status === 'deleted') throw httpError('Blog not found.', 404);
+
+  if (action === 'delete') {
+    await markPending(current.id, {
+      action: 'delete',
+      payload: null,
+      approverId,
+      requestedBy: actor.userId,
+    });
+    return getBlog(current.id);
+  }
+
+  if (action === 'move') {
+    const placement = payload.placement || input.placement;
+    if (!PLACEMENTS.includes(placement)) throw httpError('Invalid blog section.', 400);
+    await markPending(current.id, {
+      action: 'move',
+      payload: { placement },
+      approverId,
+      requestedBy: actor.userId,
+    });
+    return getBlog(current.id);
+  }
+
+  await markPending(current.id, {
+    action: 'update',
+    payload,
+    approverId,
+    requestedBy: actor.userId,
+  });
+  return getBlog(current.id);
+}
+
+export async function reviewBlogChange(id, input, { actor } = {}) {
+  if (!actor?.userId) throw httpError('Please sign in.', 401);
+  const current = await getBlog(id);
+  if (!current) throw httpError('Blog not found.', 404);
+  if (current.status === 'deleted') throw httpError('This blog is already deleted.', 400);
+  if (current.approvalStatus !== 'pending') {
+    throw httpError('This post is not waiting for approval.', 400);
+  }
+
+  const decision =
+    input.status === 'approved' || input.status === 'declined' ? input.status : null;
+  if (!decision) throw httpError('Choose approve or decline.', 400);
+
+  const message = String(input.message || '').trim();
+  if (decision === 'declined' && message.length < 3) {
+    throw httpError('Please add a short message explaining the decline.', 400);
+  }
+
+  if (decision === 'declined') {
+    await pool.query(
+      `UPDATE blogs SET
+         approval_status = 'declined',
+         approval_message = $2,
+         reviewed_at = NOW(),
+         updated_at = NOW()
+       WHERE id = $1`,
+      [id, message]
+    );
+    return getBlog(id);
+  }
+
+  const action = current.pendingAction;
+  const payload = current.pendingPayload || {};
+
+  if (action === 'delete') {
+    await deleteBlog(id);
+    await pool.query(
+      `UPDATE blogs SET
+         approval_status = 'approved',
+         pending_action = 'none',
+         pending_payload = NULL,
+         approval_message = $2,
+         reviewed_at = NOW()
+       WHERE id = $1`,
+      [id, message]
+    );
+    return getBlog(id);
+  }
+
+  if (action === 'move') {
+    await setBlogPlacement(id, payload.placement, { actorRole: 'admin' });
+  } else if (action === 'create' || action === 'update') {
+    await updateBlog(id, { ...payload, published: true, status: 'active' }, { actorRole: 'admin' });
+  } else {
+    await updateBlog(id, { published: true }, { actorRole: 'admin' });
+  }
+
+  await pool.query(
+    `UPDATE blogs SET
+       approval_status = 'approved',
+       pending_action = 'none',
+       pending_payload = NULL,
+       published = TRUE,
+       approval_message = $2,
+       reviewed_at = NOW(),
+       updated_at = NOW()
+     WHERE id = $1 AND status = 'active'`,
+    [id, message]
+  );
   return getBlog(id);
 }
