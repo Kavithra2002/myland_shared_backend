@@ -35,7 +35,19 @@ import {
   updateUser,
   validateUserInput,
 } from './users.js';
+import { mailStatus, sendTestMail } from './mail.js';
 import { openApiSpec } from './swagger.js';
+import {
+  ensureUploadDirs,
+  getProject,
+  listProjects,
+  migrateProjectsSchema,
+  projectUpload,
+  reviewProjectChange,
+  seedWebsiteProjects,
+  submitProjectChange,
+  uploadsRoot,
+} from './projects.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -57,6 +69,8 @@ function corsOrigin() {
 
 app.use(cors({ origin: corsOrigin() }));
 app.use(express.json({ limit: '2mb' }));
+ensureUploadDirs();
+app.use('/api/uploads', express.static(uploadsRoot));
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
   explorer: true,
@@ -91,6 +105,23 @@ app.post('/api/auth/login', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not sign in' });
+  }
+});
+
+app.get('/api/mail/status', requireAuth, async (_req, res) => {
+  try {
+    res.json(await mailStatus());
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load mail status' });
+  }
+});
+
+app.post('/api/mail/test', requireAuth, async (req, res) => {
+  try {
+    const result = await sendTestMail(req.user?.email);
+    res.status(result.sent ? 200 : 400).json(result);
+  } catch (err) {
+    res.status(500).json({ sent: false, reason: err.message || 'Could not send test mail' });
   }
 });
 
@@ -438,6 +469,89 @@ app.delete('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/projects', optionalAuth, async (req, res) => {
+  try {
+    const all = req.query.all === 'true' && Boolean(req.user);
+    const projects = await listProjects({
+      includeUnpublished: all,
+      includeDeleted: all && req.query.deleted === 'true',
+    });
+    res.json({ projects });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load projects' });
+  }
+});
+
+app.post('/api/projects/uploads', requireAuth, (req, res) => {
+  if (req.user?.role === 'admin') {
+    res.status(403).json({ message: 'Admins approve or decline listing requests. They cannot add or edit projects.' });
+    return;
+  }
+  projectUpload.array('files', 12)(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ message: err.message || 'Could not upload files' });
+      return;
+    }
+    const urls = (req.files || []).map((file) => `/api/uploads/projects/${file.filename}`);
+    res.json({ urls });
+  });
+});
+
+app.post('/api/projects/submit', requireAuth, async (req, res) => {
+  try {
+    const project = await submitProjectChange(req.body, { actor: req.user });
+    res.status(201).json({ project });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not send for approval' });
+  }
+});
+
+app.post('/api/projects/:id/review', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const project = await reviewProjectChange(req.params.id, req.body, { actor: req.user });
+    res.json({ project });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not review listing' });
+  }
+});
+
+app.get('/api/projects/:idOrSlug', optionalAuth, async (req, res) => {
+  try {
+    const project = await getProject(req.params.idOrSlug, { publicOnly: !req.user });
+    if (!project) {
+      res.status(404).json({ message: 'Project not found.' });
+      return;
+    }
+    res.json({ project });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load project' });
+  }
+});
+
+app.post('/api/projects', requireAuth, async (req, res) => {
+  const message =
+    req.user?.role === 'admin'
+      ? 'Admins approve or decline listing requests. They cannot add or edit projects.'
+      : 'Send listing changes to an admin for approval.';
+  res.status(403).json({ message });
+});
+
+app.patch('/api/projects/:id', requireAuth, async (req, res) => {
+  const message =
+    req.user?.role === 'admin'
+      ? 'Admins approve or decline listing requests. They cannot add or edit projects.'
+      : 'Send listing changes to an admin for approval.';
+  res.status(403).json({ message });
+});
+
+app.delete('/api/projects/:id', requireAuth, async (req, res) => {
+  const message =
+    req.user?.role === 'admin'
+      ? 'Admins approve or decline listing requests. They cannot add or edit projects.'
+      : 'Send listing changes to an admin for approval.';
+  res.status(403).json({ message });
+});
+
 async function start() {
   console.log('backend starting');
   try {
@@ -446,6 +560,8 @@ async function start() {
     await seedTestUsers();
     await migrateBlogsSchema();
     await seedBlogsIfEmpty();
+    await migrateProjectsSchema();
+    await seedWebsiteProjects();
   } catch (err) {
     console.error(err.message);
   }
