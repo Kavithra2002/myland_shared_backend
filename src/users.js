@@ -7,7 +7,7 @@ const STATUSES = ['active', 'deleted'];
 const SALT_ROUNDS = 10;
 
 const USER_COLUMNS = `user_id, user_created_date, name, email, password, role,
-  user_status, user_update_date, plain_password`;
+  user_status, user_update_date, plain_password, google_sub, google_refresh_token`;
 
 const TEST_USERS = [
   {
@@ -34,10 +34,13 @@ CREATE TABLE users (
   role TEXT NOT NULL CHECK (role IN ('user', 'admin')),
   user_status TEXT NOT NULL DEFAULT 'active' CHECK (user_status IN ('active', 'deleted')),
   user_update_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  plain_password TEXT
+  plain_password TEXT,
+  google_sub TEXT,
+  google_refresh_token TEXT
 );
 
 CREATE UNIQUE INDEX users_email_lower_key ON users (LOWER(email));
+CREATE UNIQUE INDEX users_google_sub_key ON users (google_sub) WHERE google_sub IS NOT NULL;
 `;
 
 function isoDate(value) {
@@ -142,7 +145,18 @@ function schemaMatches(columns) {
 export async function migrateUsersSchema() {
   const exists = await tableExists();
   const columns = exists ? await currentColumns() : new Set();
-  if (exists && schemaMatches(columns)) return { recreated: false };
+  if (exists && schemaMatches(columns)) {
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token TEXT;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_key
+        ON users (google_sub)
+        WHERE google_sub IS NOT NULL
+    `);
+    return { recreated: false };
+  }
 
   await pool.query('DROP TABLE IF EXISTS users CASCADE');
   await pool.query(CREATE_USERS_SQL);
