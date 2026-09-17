@@ -48,6 +48,16 @@ import {
   submitProjectChange,
   uploadsRoot,
 } from './projects.js';
+import {
+  createLandUpdate,
+  deleteLandUpdate,
+  ensureLandUploadDirs,
+  landUpload,
+  listLandUpdates,
+  migrateLandUpdatesSchema,
+  updateLandUpdateStatus,
+  validateLandUpdateInput,
+} from './landUpdates.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -70,6 +80,7 @@ function corsOrigin() {
 app.use(cors({ origin: corsOrigin() }));
 app.use(express.json({ limit: '2mb' }));
 ensureUploadDirs();
+ensureLandUploadDirs();
 app.use('/api/uploads', express.static(uploadsRoot));
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
@@ -562,6 +573,7 @@ async function start() {
     await seedBlogsIfEmpty();
     await migrateProjectsSchema();
     await seedWebsiteProjects();
+    await migrateLandUpdatesSchema();
   } catch (err) {
     console.error(err.message);
   }
