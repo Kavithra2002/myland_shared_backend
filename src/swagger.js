@@ -19,6 +19,8 @@ export const openApiSpec = {
     { name: 'Reviews', description: 'Project reviews and moderation' },
     { name: 'Blogs', description: 'Journal posts and placement' },
     { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
+    { name: 'Inquiries', description: 'Project and contact-page inquiries from the public site' },
+    { name: 'CRM', description: 'Contact notifications for the MyLand CRM' },
   ],
   paths: {
     '/api/health': {
@@ -751,6 +753,193 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/crm/contacts': {
+      get: {
+        tags: ['CRM'],
+        summary: 'List new website contacts for the MyLand CRM',
+        description:
+          'Use this from the CRM to show notifications such as “a user on this number contacted MyLand”. Send the CRM API key in X-API-Key. Optional since=ISO date returns only newer rows.',
+        security: [{ CrmApiKey: [] }],
+        parameters: [
+          {
+            name: 'since',
+            in: 'query',
+            schema: { type: 'string', format: 'date-time' },
+            description: 'Only contacts created after this time',
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'CRM contact list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    contacts: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/CrmContact' },
+                    },
+                  },
+                },
+                example: {
+                  contacts: [
+                    {
+                      id: 'inq-abc123',
+                      number: '0775558899',
+                      channel: 'whatsapp',
+                      project: 'Kirindivela – Serenity Park',
+                      projectSlug: 'kirindivela-serenity-park',
+                      notification:
+                        'A user on 0775558899 contacted MyLand via WhatsApp about Kirindivela – Serenity Park.',
+                      createdAt: '2026-09-17T08:11:48.255Z',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/inquiries': {
+      get: {
+        tags: ['Inquiries'],
+        summary: 'List website inquiries',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['new', 'in_progress', 'closed', 'deleted'] },
+          },
+          {
+            name: 'deleted',
+            in: 'query',
+            description: 'Admin only. Set to true to include deleted inquiries.',
+            schema: { type: 'string', enum: ['true'] },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Inquiry list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    inquiries: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/Inquiry' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+      post: {
+        tags: ['Inquiries'],
+        summary: 'Submit an inquiry from a project page or the contact form',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateInquiry' },
+              example: {
+                name: 'Amal Perera',
+                phone: '0771234567',
+                whatsapp: '0771234567',
+                email: 'amal@example.com',
+                message: 'Is a corner plot still available?',
+                inquiryType: 'price',
+                projectSlug: 'kirindivela-serenity-park',
+                projectTitle: 'Kirindivela – Serenity Park',
+                source: 'project',
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Inquiry stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { inquiry: { $ref: '#/components/schemas/Inquiry' } },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/inquiries/{id}': {
+      patch: {
+        tags: ['Inquiries'],
+        summary: 'Update inquiry status',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateInquiryStatus' },
+              example: { status: 'in_progress' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Status updated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { inquiry: { $ref: '#/components/schemas/Inquiry' } },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          404: { $ref: '#/components/responses/Error' },
+        },
+      },
+      delete: {
+        tags: ['Inquiries'],
+        summary: 'Delete an inquiry (admin only)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        responses: {
+          200: {
+            description: 'Marked deleted. The row stays in the database.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                    inquiry: { $ref: '#/components/schemas/Inquiry' },
+                  },
+                },
+              },
+            },
+          },
+          403: { $ref: '#/components/responses/Error' },
+          404: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -758,6 +947,11 @@ export const openApiSpec = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
+      },
+      CrmApiKey: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-API-Key',
       },
     },
     parameters: {
@@ -997,6 +1191,58 @@ export const openApiSpec = {
         required: ['status'],
         properties: {
           status: { type: 'string', enum: ['new', 'contacted', 'closed'] },
+        },
+      },
+      Inquiry: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          projectSlug: { type: 'string' },
+          projectTitle: { type: 'string' },
+          name: { type: 'string' },
+          phone: { type: 'string' },
+          whatsapp: { type: 'string' },
+          email: { type: 'string' },
+          inquiryType: { type: 'string', enum: ['visit', 'price', 'loan', 'general'] },
+          message: { type: 'string' },
+          source: { type: 'string', enum: ['project', 'contact', 'whatsapp'] },
+          status: { type: 'string', enum: ['new', 'in_progress', 'closed', 'deleted'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      CreateInquiry: {
+        type: 'object',
+        required: ['name', 'phone'],
+        properties: {
+          name: { type: 'string' },
+          phone: { type: 'string' },
+          whatsapp: { type: 'string' },
+          email: { type: 'string' },
+          message: { type: 'string' },
+          inquiryType: { type: 'string', enum: ['visit', 'price', 'loan', 'general'] },
+          projectSlug: { type: 'string' },
+          projectTitle: { type: 'string' },
+          source: { type: 'string', enum: ['project', 'contact', 'whatsapp'] },
+        },
+      },
+      UpdateInquiryStatus: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['new', 'in_progress', 'closed'] },
+        },
+      },
+      CrmContact: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          number: { type: 'string' },
+          channel: { type: 'string', enum: ['whatsapp', 'call'] },
+          project: { type: 'string' },
+          projectSlug: { type: 'string' },
+          notification: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
         },
       },
     },
