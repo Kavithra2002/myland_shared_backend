@@ -57,6 +57,15 @@ import {
   updateLandUpdateStatus,
   validateLandUpdateInput,
 } from './landUpdates.js';
+import {
+  createInquiry,
+  deleteInquiry,
+  listInquiries,
+  migrateInquiriesSchema,
+  updateInquiryStatus,
+  validateInquiryInput,
+} from './inquiries.js';
+import { notifyCrm, requireCrmKey, toCrmContact } from './crm.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -522,6 +531,79 @@ app.delete('/api/land-updates/:id', requireAuth, requireAdmin, async (req, res) 
   }
 });
 
+app.get('/api/crm/contacts', requireCrmKey, async (req, res) => {
+  try {
+    const inquiries = await listInquiries({
+      since: req.query.since || undefined,
+      limit: req.query.limit || 50,
+    });
+    res.json({
+      contacts: inquiries.map(toCrmContact),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load CRM contacts' });
+  }
+});
+
+app.get('/api/inquiries', requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user?.role === 'admin';
+    const status = String(req.query.status || '');
+    const inquiries = await listInquiries({
+      status: status || undefined,
+      includeDeleted: isAdmin && (req.query.deleted === 'true' || status === 'deleted'),
+    });
+    res.json({ inquiries });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load inquiries' });
+  }
+});
+
+app.post('/api/inquiries', async (req, res) => {
+  try {
+    const fields = validateInquiryInput(req.body || {});
+    if (typeof fields === 'string') {
+      res.status(400).json({ message: fields });
+      return;
+    }
+    const { inquiry, created } = await createInquiry(fields);
+    if (created) {
+      notifyCrm(inquiry).catch((err) => {
+        console.warn(`crm notify skipped: ${err.message}`);
+      });
+    }
+    res.status(201).json({ inquiry });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not submit inquiry' });
+  }
+});
+
+app.patch('/api/inquiries/:id', requireAuth, async (req, res) => {
+  try {
+    const inquiry = await updateInquiryStatus(req.params.id, String(req.body.status || ''));
+    if (!inquiry) {
+      res.status(404).json({ message: 'Inquiry not found.' });
+      return;
+    }
+    res.json({ inquiry });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not update inquiry' });
+  }
+});
+
+app.delete('/api/inquiries/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const inquiry = await deleteInquiry(req.params.id);
+    if (!inquiry) {
+      res.status(404).json({ message: 'Inquiry not found.' });
+      return;
+    }
+    res.json({ ok: true, inquiry });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not delete inquiry' });
+  }
+});
+
 app.get('/api/projects', optionalAuth, async (req, res) => {
   try {
     const all = req.query.all === 'true' && Boolean(req.user);
@@ -616,6 +698,7 @@ async function start() {
     await migrateProjectsSchema();
     await seedWebsiteProjects();
     await migrateLandUpdatesSchema();
+    await migrateInquiriesSchema();
   } catch (err) {
     console.error(err.message);
   }
