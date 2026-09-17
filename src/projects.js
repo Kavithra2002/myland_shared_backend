@@ -5,7 +5,7 @@ import multer from 'multer';
 import { pool } from './db.js';
 import { findUserById } from './users.js';
 import { notifyListingReviewed, notifyListingSubmitted } from './mail.js';
-import { WEBSITE_PROJECTS } from './websiteProjects.js';
+import { RETIRED_WEBSITE_SLUGS, WEBSITE_PROJECTS } from './websiteProjects.js';
 import { syncWebsiteProjectMedia } from './websiteProjectMedia.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -246,21 +246,47 @@ export async function migrateProjectsSchema() {
 }
 
 export async function seedWebsiteProjects() {
-  const { rows } = await pool.query('SELECT slug FROM projects');
-  const existing = new Set(rows.map((row) => row.slug));
   let added = 0;
+  let updated = 0;
   for (const item of WEBSITE_PROJECTS) {
-    if (existing.has(item.slug)) continue;
-    await createProject({
+    const existing = await getProject(item.slug, { publicOnly: false });
+    const payload = {
       ...item,
       country: item.country || 'Sri Lanka',
       propertyType: item.propertyType || 'Land',
       videoUrl: item.videoUrl || 'https://www.youtube.com/@myland1014',
       published: true,
-    });
-    added += 1;
+      rowStatus: 'active',
+      showOnProjects: item.showOnProjects !== false,
+    };
+    if (!existing) {
+      await createProject(payload);
+      added += 1;
+    } else {
+      await updateProject(existing.id, {
+        ...payload,
+        imageUrl: existing.imageUrl || existing.image,
+        gallery: existing.gallery,
+        plotPlan: existing.plotPlan,
+      });
+      updated += 1;
+    }
+  }
+  if (RETIRED_WEBSITE_SLUGS.length) {
+    const { rowCount } = await pool.query(
+      `UPDATE projects
+          SET published = FALSE,
+              show_on_projects = FALSE,
+              row_status = 'deleted',
+              updated_at = NOW()
+        WHERE slug = ANY($1::text[])
+          AND row_status <> 'deleted'`,
+      [RETIRED_WEBSITE_SLUGS]
+    );
+    if (rowCount) console.log(`retired ${rowCount} old website projects`);
   }
   if (added) console.log(`seeded ${added} website projects`);
+  if (updated) console.log(`updated ${updated} website projects`);
   await syncWebsiteProjectMedia();
 }
 
