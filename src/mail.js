@@ -64,39 +64,6 @@ async function sendMail({ to, subject, text, html }) {
   return false;
 }
 
-export async function mailStatus() {
-  return {
-    canSend: mailEnabled(),
-    smtp: mailEnabled(),
-    from: mailEnabled() ? fromAddress() : '',
-  };
-}
-
-export async function sendTestMail(to) {
-  const address = String(to || '').trim();
-  if (!address) return { sent: false, reason: 'No email address on this account.' };
-  const listingsUrl = `${adminAppUrl()}/listings`;
-  try {
-    const sent = await sendMail({
-      to: address,
-      subject: 'MyLand mail test',
-      text: 'This is a test from MyLand Admin. If you received this, Gmail delivery is working.',
-      html: wrapHtml({
-        heading: 'Mail test',
-        buttonLabel: 'Open admin',
-        buttonUrl: listingsUrl,
-        body: '<p style="margin:0;font-size:15px;line-height:1.6">This is a test from MyLand Admin. If you received this, Gmail delivery is working.</p>',
-      }),
-    });
-    return {
-      sent,
-      reason: sent ? '' : 'Mail is not connected yet. Set SMTP_USER and SMTP_PASS in the backend .env.',
-    };
-  } catch (err) {
-    return { sent: false, reason: err.message || 'Could not send test mail.' };
-  }
-}
-
 function actionLabel(action) {
   if (action === 'create') return 'a new listing';
   if (action === 'delete') return 'a listing deletion';
