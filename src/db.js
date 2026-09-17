@@ -117,15 +117,26 @@ CREATE INDEX IF NOT EXISTS idx_blogs_published
 
 CREATE TABLE IF NOT EXISTS inquiries (
   id TEXT PRIMARY KEY,
-  project_title TEXT,
+  project_slug TEXT NOT NULL DEFAULT '',
+  project_title TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
-  phone TEXT,
-  email TEXT,
-  inquiry_type TEXT,
-  message TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'new',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  phone TEXT NOT NULL DEFAULT '',
+  whatsapp TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  inquiry_type TEXT NOT NULL DEFAULT 'general',
+  message TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'project',
+  status TEXT NOT NULL DEFAULT 'new'
+    CHECK (status IN ('new', 'in_progress', 'closed', 'deleted')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_inquiries_created
+  ON inquiries (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_inquiries_status
+  ON inquiries (status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS bookings (
   id TEXT PRIMARY KEY,
