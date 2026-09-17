@@ -35,7 +35,6 @@ import {
   updateUser,
   validateUserInput,
 } from './users.js';
-import { mailStatus, sendTestMail } from './mail.js';
 import { openApiSpec } from './swagger.js';
 import {
   ensureUploadDirs,
@@ -116,23 +115,6 @@ app.post('/api/auth/login', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not sign in' });
-  }
-});
-
-app.get('/api/mail/status', requireAuth, async (_req, res) => {
-  try {
-    res.json(await mailStatus());
-  } catch (err) {
-    res.status(500).json({ message: err.message || 'Could not load mail status' });
-  }
-});
-
-app.post('/api/mail/test', requireAuth, async (req, res) => {
-  try {
-    const result = await sendTestMail(req.user?.email);
-    res.status(result.sent ? 200 : 400).json(result);
-  } catch (err) {
-    res.status(500).json({ sent: false, reason: err.message || 'Could not send test mail' });
   }
 });
 
