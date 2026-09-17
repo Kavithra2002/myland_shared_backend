@@ -480,6 +480,26 @@ app.delete('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.post('/api/land-updates', (req, res) => {
+  landUpload.array('photos', 8)(req, res, async (err) => {
+    if (err) {
+      res.status(400).json({ message: err.message || 'Could not upload photos' });
+      return;
+    }
+    try {
+      const fields = validateLandUpdateInput(req.body || {});
+      if (typeof fields === 'string') {
+        res.status(400).json({ message: fields });
+        return;
+      }
+      const update = await createLandUpdate(fields, req.files || []);
+      res.status(201).json({ update });
+    } catch (error) {
+      res.status(500).json({ message: error.message || 'Could not send land details' });
+    }
+  });
+});
+
 app.get('/api/projects', optionalAuth, async (req, res) => {
   try {
     const all = req.query.all === 'true' && Boolean(req.user);
