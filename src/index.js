@@ -480,6 +480,20 @@ app.delete('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/land-updates', requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user?.role === 'admin';
+    const status = String(req.query.status || '');
+    const updates = await listLandUpdates({
+      status: status || undefined,
+      includeDeleted: isAdmin && (req.query.deleted === 'true' || status === 'deleted'),
+    });
+    res.json({ updates });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load property updates' });
+  }
+});
+
 app.post('/api/land-updates', (req, res) => {
   landUpload.array('photos', 8)(req, res, async (err) => {
     if (err) {
@@ -498,6 +512,32 @@ app.post('/api/land-updates', (req, res) => {
       res.status(500).json({ message: error.message || 'Could not send land details' });
     }
   });
+});
+
+app.patch('/api/land-updates/:id', requireAuth, async (req, res) => {
+  try {
+    const update = await updateLandUpdateStatus(req.params.id, String(req.body.status || ''));
+    if (!update) {
+      res.status(404).json({ message: 'Property update not found.' });
+      return;
+    }
+    res.json({ update });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not update status' });
+  }
+});
+
+app.delete('/api/land-updates/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const update = await deleteLandUpdate(req.params.id);
+    if (!update) {
+      res.status(404).json({ message: 'Property update not found.' });
+      return;
+    }
+    res.json({ ok: true, update });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not delete property update' });
+  }
 });
 
 app.get('/api/projects', optionalAuth, async (req, res) => {
