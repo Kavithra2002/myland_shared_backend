@@ -18,6 +18,7 @@ export const openApiSpec = {
     { name: 'Users', description: 'Admin user management (soft delete)' },
     { name: 'Reviews', description: 'Project reviews and moderation' },
     { name: 'Blogs', description: 'Journal posts and placement' },
+    { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
   ],
   paths: {
     '/api/health': {
@@ -609,6 +610,147 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/land-updates': {
+      get: {
+        tags: ['Land updates'],
+        summary: 'List sell-your-land submissions',
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['new', 'contacted', 'closed', 'deleted'] },
+          },
+          {
+            name: 'deleted',
+            in: 'query',
+            description: 'Admin only. Set to true to include deleted submissions.',
+            schema: { type: 'string', enum: ['true'] },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Property updates',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    updates: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/LandUpdate' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+      post: {
+        tags: ['Land updates'],
+        summary: 'Submit land details from the public Sell your land form',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['name', 'phone', 'location'],
+                properties: {
+                  name: { type: 'string' },
+                  phone: { type: 'string' },
+                  email: { type: 'string' },
+                  location: { type: 'string' },
+                  size: { type: 'string' },
+                  message: { type: 'string' },
+                  photos: {
+                    type: 'array',
+                    items: { type: 'string', format: 'binary' },
+                    maxItems: 8,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Submission stored',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    update: { $ref: '#/components/schemas/LandUpdate' },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/land-updates/{id}': {
+      patch: {
+        tags: ['Land updates'],
+        summary: 'Update contact status',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateLandStatus' },
+              example: { status: 'contacted' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Status updated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    update: { $ref: '#/components/schemas/LandUpdate' },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          404: { $ref: '#/components/responses/Error' },
+        },
+      },
+      delete: {
+        tags: ['Land updates'],
+        summary: 'Delete a land submission (admin only)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        responses: {
+          200: {
+            description: 'Marked deleted. The row stays in the database.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                    update: { $ref: '#/components/schemas/LandUpdate' },
+                  },
+                },
+              },
+            },
+          },
+          403: { $ref: '#/components/responses/Error' },
+          404: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -832,6 +974,29 @@ export const openApiSpec = {
           readTime: { type: 'string' },
           sortOrder: { type: 'integer' },
           publishedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      LandUpdate: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          phone: { type: 'string' },
+          email: { type: 'string' },
+          location: { type: 'string' },
+          size: { type: 'string' },
+          notes: { type: 'string' },
+          photos: { type: 'array', items: { type: 'string' } },
+          status: { type: 'string', enum: ['new', 'contacted', 'closed', 'deleted'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      UpdateLandStatus: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['new', 'contacted', 'closed'] },
         },
       },
     },
