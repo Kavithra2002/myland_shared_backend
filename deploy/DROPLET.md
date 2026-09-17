@@ -116,7 +116,11 @@ PGPASSWORD=YOUR_STRONG_PASSWORD
 PORT=5000
 CORS_ORIGINS=
 PGSSLMODE=
+CRM_API_KEY=paste_same_key_as_local
+CRM_WEBHOOK_URL=
 ```
+
+Set `CRM_API_KEY` to the same value as local `shared_backend/.env`. After deploy, the CRM polls `http://YOUR_DROPLET_IP/api/crm/contacts` (or `https://myland.lk/api/crm/contacts` once DNS/HTTPS is on) with header `X-API-Key`. Leave `CRM_WEBHOOK_URL` empty until they give you a webhook.
 
 Leave `VITE_API_URL` empty on the frontends. Nginx puts site and API on the same host, so `/api` works.
 
