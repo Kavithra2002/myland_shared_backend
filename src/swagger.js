@@ -20,6 +20,7 @@ export const openApiSpec = {
     { name: 'Blogs', description: 'Journal posts and placement' },
     { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
     { name: 'Inquiries', description: 'Project and contact-page inquiries from the public site' },
+    { name: 'Favorites', description: 'Project heart counts from public visitors' },
     { name: 'CRM', description: 'Contact notifications for the MyLand CRM' },
   ],
   paths: {
@@ -937,6 +938,105 @@ export const openApiSpec = {
           },
           403: { $ref: '#/components/responses/Error' },
           404: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/favorites/summary': {
+      get: {
+        tags: ['Favorites'],
+        summary: 'Heart totals for the admin dashboard',
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'Total hearts and per-project counts',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    total: { type: 'integer' },
+                    projects: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          slug: { type: 'string' },
+                          title: { type: 'string' },
+                          hearts: { type: 'integer' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/favorites/status': {
+      get: {
+        tags: ['Favorites'],
+        summary: 'Whether this visitor has hearted a project',
+        parameters: [
+          { name: 'projectSlug', in: 'query', required: true, schema: { type: 'string' } },
+          { name: 'visitorKey', in: 'query', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            description: 'Heart status',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    liked: { type: 'boolean' },
+                    count: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/favorites': {
+      post: {
+        tags: ['Favorites'],
+        summary: 'Add or remove a project heart',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  projectSlug: { type: 'string' },
+                  projectTitle: { type: 'string' },
+                  visitorKey: { type: 'string' },
+                  liked: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Updated heart status',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    liked: { type: 'boolean' },
+                    count: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
         },
       },
     },
