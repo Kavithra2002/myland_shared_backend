@@ -138,6 +138,31 @@ CREATE INDEX IF NOT EXISTS idx_inquiries_created
 CREATE INDEX IF NOT EXISTS idx_inquiries_status
   ON inquiries (status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS project_hearts (
+  id TEXT PRIMARY KEY,
+  project_slug TEXT NOT NULL,
+  project_title TEXT NOT NULL DEFAULT '',
+  visitor_key TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (project_slug, visitor_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_hearts_slug
+  ON project_hearts (project_slug);
+
+CREATE INDEX IF NOT EXISTS idx_project_hearts_created
+  ON project_hearts (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_mailed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_newsletter_created
+  ON newsletter_subscribers (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS bookings (
   id TEXT PRIMARY KEY,
   project_slug TEXT,
