@@ -89,7 +89,21 @@ app.use(cors({ origin: corsOrigin() }));
 app.use(express.json({ limit: '2mb' }));
 ensureUploadDirs();
 ensureLandUploadDirs();
-app.use('/api/uploads', express.static(uploadsRoot));
+app.use(
+  '/api/uploads',
+  express.static(uploadsRoot, {
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      const name = String(filePath || '').replace(/\\/g, '/').split('/').pop() || '';
+      if (/^(proj|land)-\d+-/.test(name)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    },
+  })
+);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
   explorer: true,
