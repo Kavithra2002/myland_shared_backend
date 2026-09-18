@@ -65,6 +65,23 @@ import {
   updateInquiryStatus,
   validateInquiryInput,
 } from './inquiries.js';
+import {
+  getHeartStatus,
+  listHeartSummary,
+  migrateFavoritesSchema,
+  setHeart,
+  validateHeartInput,
+} from './favorites.js';
+import {
+  createSubscriber,
+  getSubscriber,
+  listSubscribers,
+  markSubscriberMailed,
+  migrateNewsletterSchema,
+  seedTestSubscribers,
+  validateSubscriberEmail,
+} from './newsletter.js';
+import { sendSubscriberAlert } from './mail.js';
 import { notifyCrm, requireCrmKey, toCrmContact } from './crm.js';
 
 const app = express();
@@ -616,6 +633,88 @@ app.delete('/api/inquiries/:id', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
+app.get('/api/favorites/summary', requireAuth, async (_req, res) => {
+  try {
+    const summary = await listHeartSummary();
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load hearts' });
+  }
+});
+
+app.get('/api/favorites/status', async (req, res) => {
+  try {
+    const status = await getHeartStatus(req.query.projectSlug, req.query.visitorKey);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load heart status' });
+  }
+});
+
+app.post('/api/favorites', async (req, res) => {
+  try {
+    const validated = validateHeartInput(req.body || {});
+    if (validated.error) {
+      res.status(400).json({ message: validated.error });
+      return;
+    }
+    const status = await setHeart(validated.data);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not update heart' });
+  }
+});
+
+app.get('/api/newsletter', requireAuth, async (_req, res) => {
+  try {
+    const subscribers = await listSubscribers();
+    res.json({ subscribers });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load subscribers' });
+  }
+});
+
+app.post('/api/newsletter', async (req, res) => {
+  try {
+    const validated = validateSubscriberEmail(req.body || {});
+    if (validated.error) {
+      res.status(400).json({ message: validated.error });
+      return;
+    }
+    const subscriber = await createSubscriber(validated.data.email);
+    res.status(201).json({ subscriber });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not subscribe' });
+  }
+});
+
+app.post('/api/newsletter/:id/send', requireAuth, async (req, res) => {
+  try {
+    const subscriber = await getSubscriber(req.params.id);
+    if (!subscriber) {
+      res.status(404).json({ message: 'Subscriber not found.' });
+      return;
+    }
+    const subject = String(req.body.subject || 'New plots at MyLand').trim();
+    const message = String(req.body.message || '').trim();
+    if (!subject || !message) {
+      res.status(400).json({ message: 'Subject and message are required.' });
+      return;
+    }
+    const sent = await sendSubscriberAlert(subscriber.email, { subject, message });
+    const updated = sent ? await markSubscriberMailed(subscriber.id) : subscriber;
+    res.json({
+      sent,
+      subscriber: updated,
+      message: sent
+        ? `Email sent to ${subscriber.email}. Check Inbox, Promotions, and Spam.`
+        : 'Mail server is not configured.',
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not send email' });
+  }
+});
+
 app.get('/api/projects', optionalAuth, async (req, res) => {
   try {
     const all = req.query.all === 'true' && Boolean(req.user);
@@ -711,6 +810,9 @@ async function start() {
     await seedWebsiteProjects();
     await migrateLandUpdatesSchema();
     await migrateInquiriesSchema();
+    await migrateFavoritesSchema();
+    await migrateNewsletterSchema();
+    await seedTestSubscribers();
   } catch (err) {
     console.error(err.message);
   }
