@@ -561,17 +561,15 @@ app.get('/api/inquiries', requireAuth, async (req, res) => {
 
 app.post('/api/inquiries', async (req, res) => {
   try {
-    const fields = validateInquiryInput(req.body || {});
-    if (typeof fields === 'string') {
-      res.status(400).json({ message: fields });
+    const validated = validateInquiryInput(req.body || {});
+    if (validated.error) {
+      res.status(400).json({ message: validated.error });
       return;
     }
-    const { inquiry, created } = await createInquiry(fields);
-    if (created) {
-      notifyCrm(inquiry).catch((err) => {
-        console.warn(`crm notify skipped: ${err.message}`);
-      });
-    }
+    const inquiry = await createInquiry(validated.data);
+    notifyCrm(inquiry).catch((err) => {
+      console.warn(`crm notify skipped: ${err.message}`);
+    });
     res.status(201).json({ inquiry });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not submit inquiry' });

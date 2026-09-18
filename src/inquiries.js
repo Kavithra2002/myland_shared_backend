@@ -22,7 +22,14 @@ function mapInquiry(row) {
 }
 
 export async function migrateInquiriesSchema() {
-  return;
+  await pool.query(`
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS user_id INTEGER;
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS pending_action VARCHAR(50);
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS requested_by INTEGER;
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS pending_payload JSONB;
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS approver_id INTEGER;
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+  `);
 }
 
 export async function listInquiries({ status } = {}) {
@@ -63,26 +70,29 @@ export function validateInquiryInput(body) {
   const waDigits = whatsappRaw.replace(/\D/g, '');
 
   if (source === 'whatsapp') {
-    if (waDigits.length < 9) return 'Please enter a valid WhatsApp number.';
+    if (waDigits.length < 9) return { error: 'Please enter a valid WhatsApp number.' };
   } else {
-    if (!name || name.length < 2) return 'Please enter your name.';
-    if (phoneDigits.length < 9) return 'Please enter a valid contact number.';
+    if (!name || name.length < 2) return { error: 'Please enter your name.' };
+    if (phoneDigits.length < 9) return { error: 'Please enter a valid contact number.' };
   }
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Please enter a valid email.';
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: 'Please enter a valid email.' };
+  }
   if ((source === 'project' || source === 'whatsapp') && !projectTitle && !projectSlug) {
-    return 'Project is required.';
+    return { error: 'Project is required.' };
   }
 
   return {
-    name: name || '-',
-    phone: source === 'whatsapp' ? whatsappRaw : phoneRaw,
-    whatsapp: source === 'whatsapp' ? whatsappRaw : phoneRaw,
-    email,
-    message,
-    projectSlug,
-    projectTitle: projectTitle || projectSlug,
-    source,
-    inquiryType,
+    data: {
+      name: name || '-',
+      phone: source === 'whatsapp' ? whatsappRaw : phoneRaw,
+      email,
+      message,
+      projectSlug,
+      projectTitle: projectTitle || projectSlug,
+      source,
+      inquiryType,
+    },
   };
 }
 
@@ -104,7 +114,7 @@ export async function createInquiry(input) {
       input.message || '',
     ]
   );
-  return { inquiry: mapInquiry(rows[0]), created: true };
+  return mapInquiry(rows[0]);
 }
 
 export async function updateInquiryStatus(id, status) {
