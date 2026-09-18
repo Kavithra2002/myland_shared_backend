@@ -13,7 +13,7 @@ export function toCrmContact(inquiry) {
     inquiry.source === 'whatsapp' ||
     (!isBlankNumber(inquiry.whatsapp) && isBlankNumber(inquiry.phone));
   const number = viaWa
-    ? String(inquiry.whatsapp || '').trim()
+    ? String(inquiry.whatsapp || inquiry.phone || '').trim()
     : String(inquiry.phone || inquiry.whatsapp || '').trim();
   const channel = viaWa ? 'whatsapp' : 'call';
   const project = inquiry.projectTitle || 'MyLand';
