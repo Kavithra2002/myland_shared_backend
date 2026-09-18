@@ -9,22 +9,36 @@ function mailEnabled() {
 }
 
 function fromAddress() {
-  return process.env.MAIL_FROM || process.env.SMTP_USER;
+  return String(process.env.MAIL_FROM || process.env.SMTP_USER || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
 }
 
 function transporter() {
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const common = {
+    auth: { user, pass },
+    connectionTimeout: 12_000,
+    greetingTimeout: 12_000,
+    socketTimeout: 20_000,
+  };
+  if (host.includes('gmail')) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      ...common,
+    });
+  }
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host,
     port: Number(process.env.SMTP_PORT || 587),
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+    ...common,
   });
 }
 
-function wrapHtml({ heading, body, buttonLabel, buttonUrl }) {
+function wrapHtml({ heading, body, buttonLabel, buttonUrl, eyebrow = 'MyLand Admin' }) {
   const button = buttonUrl
     ? `<p style="margin:28px 0 8px">
         <a href="${buttonUrl}" style="display:inline-block;background:#c1121f;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 22px;border-radius:999px">
@@ -36,7 +50,7 @@ function wrapHtml({ heading, body, buttonLabel, buttonUrl }) {
 <html>
   <body style="margin:0;padding:0;background:#f6f1ea;font-family:Arial,sans-serif;color:#1f1a17">
     <div style="max-width:560px;margin:24px auto;background:#fff;border-radius:24px;padding:32px 28px">
-      <p style="margin:0 0 6px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#c1121f;font-weight:700">MyLand Admin</p>
+      <p style="margin:0 0 6px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#c1121f;font-weight:700">${eyebrow}</p>
       <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3">${heading}</h1>
       ${body}
       ${button}
@@ -49,9 +63,11 @@ async function sendMail({ to, subject, text, html }) {
   if (!to) return false;
 
   if (mailEnabled()) {
+    const user = process.env.SMTP_USER;
     await transporter().sendMail({
-      from: fromAddress(),
+      from: fromAddress() || user,
       to,
+      replyTo: user,
       subject,
       text,
       html,
@@ -62,6 +78,36 @@ async function sendMail({ to, subject, text, html }) {
 
   console.warn(`mail skipped (set SMTP_USER and SMTP_PASS): ${subject} -> ${to}`);
   return false;
+}
+
+export async function sendSubscriberAlert(to, { subject, message } = {}) {
+  const heading = String(subject || 'New plots at MyLand').trim();
+  const text = String(message || '').trim();
+  if (!to || !heading || !text) return false;
+  const htmlBody = `<p style="margin:0;font-size:15px;line-height:1.7;white-space:pre-wrap">${text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')}</p>`;
+  try {
+    return await sendMail({
+      to,
+      subject: heading,
+      text,
+      html: wrapHtml({
+        eyebrow: 'MyLand',
+        heading,
+        body: htmlBody,
+        buttonLabel: 'View listings',
+        buttonUrl: String(process.env.PUBLIC_SITE_URL || 'https://myland.lk').replace(/\/$/, ''),
+      }),
+    });
+  } catch (err) {
+    console.error(`subscriber mail failed -> ${to}:`, err.message);
+    const error = new Error(err.message || 'Could not send email.');
+    error.statusCode = 502;
+    throw error;
+  }
 }
 
 function actionLabel(action) {
