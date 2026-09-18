@@ -60,6 +60,8 @@ import {
 import {
   createInquiry,
   deleteInquiry,
+  getInquiry,
+  isContactInquiry,
   listInquiries,
   migrateInquiriesSchema,
   updateInquiryStatus,
@@ -622,13 +624,18 @@ app.patch('/api/inquiries/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/inquiries/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/inquiries/:id', requireAuth, async (req, res) => {
   try {
-    const inquiry = await deleteInquiry(req.params.id);
-    if (!inquiry) {
+    const existing = await getInquiry(req.params.id);
+    if (!existing) {
       res.status(404).json({ message: 'Inquiry not found.' });
       return;
     }
+    if (!isContactInquiry(existing) && req.user?.role !== 'admin') {
+      res.status(403).json({ message: 'Admin access required.' });
+      return;
+    }
+    const inquiry = await deleteInquiry(req.params.id);
     res.json({ ok: true, inquiry });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not delete inquiry' });

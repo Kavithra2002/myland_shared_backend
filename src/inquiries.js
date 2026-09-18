@@ -155,6 +155,16 @@ export async function createInquiry(input) {
   return mapInquiry(rows[0]);
 }
 
+export async function getInquiry(id) {
+  const { rows } = await pool.query(`SELECT ${COLUMNS} FROM inquiries WHERE id = $1`, [id]);
+  return mapInquiry(rows[0]);
+}
+
+export function isContactInquiry(inquiry) {
+  if (!inquiry) return false;
+  return inquiry.source === 'contact' || (!inquiry.projectSlug && !inquiry.projectTitle);
+}
+
 export async function updateInquiryStatus(id, status) {
   const { rows } = await pool.query(
     `UPDATE inquiries SET status = $2 WHERE id = $1 RETURNING ${COLUMNS}`,
@@ -166,3 +176,4 @@ export async function updateInquiryStatus(id, status) {
 export async function deleteInquiry(id) {
   return updateInquiryStatus(id, 'deleted');
 }
+
