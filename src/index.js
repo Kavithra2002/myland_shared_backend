@@ -74,6 +74,8 @@ import {
 } from './favorites.js';
 import {
   createSubscriber,
+  deleteAllSubscribers,
+  deleteSubscriber,
   getSubscriber,
   listSubscribers,
   markSubscriberMailed,
@@ -685,6 +687,28 @@ app.post('/api/newsletter', async (req, res) => {
     res.status(201).json({ subscriber });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not subscribe' });
+  }
+});
+
+app.delete('/api/newsletter', requireAuth, async (_req, res) => {
+  try {
+    const result = await deleteAllSubscribers();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not clear emails' });
+  }
+});
+
+app.delete('/api/newsletter/:id', requireAuth, async (req, res) => {
+  try {
+    const subscriber = await deleteSubscriber(req.params.id);
+    if (!subscriber) {
+      res.status(404).json({ message: 'Subscriber not found.' });
+      return;
+    }
+    res.json({ ok: true, subscriber });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not clear email' });
   }
 });
 

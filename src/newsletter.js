@@ -74,6 +74,8 @@ const TEST_ALERT_EMAILS = [
 ];
 
 export async function seedTestSubscribers() {
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM newsletter_subscribers`);
+  if (rows[0]?.count) return;
   for (let i = 0; i < TEST_ALERT_EMAILS.length; i += 1) {
     await pool.query(
       `INSERT INTO newsletter_subscribers (id, email, created_at)
@@ -82,6 +84,21 @@ export async function seedTestSubscribers() {
       [`sub-test-${i + 1}`, TEST_ALERT_EMAILS[i], i + 1]
     );
   }
+}
+
+export async function deleteSubscriber(id) {
+  const { rows } = await pool.query(
+    `DELETE FROM newsletter_subscribers
+     WHERE id = $1
+     RETURNING id, email, created_at, last_mailed_at`,
+    [id]
+  );
+  return mapSubscriber(rows[0]);
+}
+
+export async function deleteAllSubscribers() {
+  const result = await pool.query(`DELETE FROM newsletter_subscribers`);
+  return { deleted: result.rowCount || 0 };
 }
 
 export async function markSubscriberMailed(id) {
