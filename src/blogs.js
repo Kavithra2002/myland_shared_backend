@@ -1,4 +1,4 @@
-﻿import { pool } from './db.js';
+import { pool } from './db.js';
 import { findUserById } from './users.js';
 
 const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, read_time,
@@ -34,7 +34,7 @@ const SEED_POSTS = [
 
 Red flags we will not list: overlapping plans, unsigned partitions, and "the lawyer is still checking" with no date attached. If those show up, the listing stays off Find Land.
 
-When you book a MyLand site visit, the advisor brings the same pack we used to approve the project — so the paperwork conversation happens on the ground, not after you have already reserved.`,
+When you book a Myland site visit, the advisor brings the same pack we used to approve the project — so the paperwork conversation happens on the ground, not after you have already reserved.`,
     topic: 'Titles',
     imageUrl:
       'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=2000&auto=format&fit=crop',
@@ -55,7 +55,7 @@ When you book a MyLand site visit, the advisor brings the same pack we used to a
 
 We pause at the boundary stones, the drain, and the nearest public road. Those three minutes usually tell you more than a drone video.
 
-If a seller rushes you past the plan, that is the signal. MyLand listings are walked the same way every time so you can compare plots fairly.`,
+If a seller rushes you past the plan, that is the signal. Myland listings are walked the same way every time so you can compare plots fairly.`,
     topic: 'Site visits',
     imageUrl:
       'https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1600&auto=format&fit=crop',
@@ -71,7 +71,7 @@ If a seller rushes you past the plan, that is the signal. MyLand listings are wa
     slug: 'commercial-land-sri-lanka',
     title: 'When a residential plot is not the right buy',
     excerpt:
-      'How commercial-frontage lots differ from family plots, and which MyLand listings are built for clinics, offices, and mixed-use.',
+      'How commercial-frontage lots differ from family plots, and which Myland listings are built for clinics, offices, and mixed-use.',
     body: `A family plot and a clinic lot are priced on different things: frontage, parking, and what the local authority will actually permit.
 
 If you are buying for a practice or a small office, walk the main-road edge and check turning radius before you fall in love with the view.
@@ -92,7 +92,7 @@ We mark mixed-use listings clearly so you are not converting a quiet residential
     slug: 'gampaha-vs-colombo-first-buyers',
     title: 'Gampaha or Colombo: where first-time buyers actually start',
     excerpt:
-      'A practical comparison of commute, plot size, and starting price across the two corridors most MyLand families ask about.',
+      'A practical comparison of commute, plot size, and starting price across the two corridors most Myland families ask about.',
     body: `Most first-time buyers are choosing between a larger Gampaha plot and a shorter Colombo commute. There is no universal winner — only the one that matches school runs, work, and budget.
 
 We compare perch size, asking price, and the real drive at 7:30am, not the map's optimistic minutes.
@@ -118,7 +118,7 @@ Book two visits on the same weekend if you can. Walking both corridors back to b
 
 Lenders typically want a clean title pack, valuation, and proof of income in that order. Missing one item is what stalls a file for weeks.
 
-A MyLand advisor can tell you which of our listings already have packs banks have seen before — that is the practical shortcut.`,
+A Myland advisor can tell you which of our listings already have packs banks have seen before — that is the practical shortcut.`,
     topic: 'Loans',
     imageUrl:
       'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=1600&auto=format&fit=crop',
@@ -132,7 +132,7 @@ A MyLand advisor can tell you which of our listings already have packs banks hav
   {
     id: 'blog-006',
     slug: 'what-a-site-visit-should-cover',
-    title: 'What a proper MyLand site visit should cover',
+    title: 'What a proper Myland site visit should cover',
     excerpt:
       'Boundaries, drainage, electricity, and the five-minute walk that tells you more than any brochure photo.',
     body: `A proper visit is a loop: entrance road, plot, drain, power, and the five-minute walk to the nearest junction. If any of those is skipped, ask to go back.
@@ -238,6 +238,15 @@ function mapBlog(row) {
 }
 
 export async function migrateBlogsSchema() {
+  await pool.query(`
+    UPDATE blogs
+       SET title = REPLACE(title, 'MyLand', 'Myland'),
+           excerpt = REPLACE(excerpt, 'MyLand', 'Myland'),
+           body = REPLACE(body, 'MyLand', 'Myland')
+     WHERE title LIKE '%MyLand%'
+        OR excerpt LIKE '%MyLand%'
+        OR body LIKE '%MyLand%';
+  `);
   await pool.query(`
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS placement TEXT NOT NULL DEFAULT 'index';
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
