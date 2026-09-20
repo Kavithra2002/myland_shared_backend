@@ -112,7 +112,7 @@ export const WEBSITE_PROJECTS = [
     excerpt: 'Plotted Meerigama lots with a finished access road, boundary markers, and a site office ready for walk-in visits.',
     mapQuery: 'Meerigama, Gampaha, Sri Lanka',
     overview:
-      'Meerigama is an available MyLand project with clearly marked plots, gravel internal roads, and an on-site office for guided visits.',
+      'Meerigama is an available Myland project with clearly marked plots, gravel internal roads, and an on-site office for guided visits.',
     description: [
       'Marked residential plots ready for sale',
       'Finished access road into the site',
@@ -137,7 +137,7 @@ export const WEBSITE_PROJECTS = [
     excerpt: 'A completed Dompe development with finished roads and plots already handed over to owners.',
     mapQuery: 'Dompe, Sri Lanka',
     overview:
-      'Dompe is a sold-out MyLand project — a finished residential site with internal roads, drainage, and a settled neighbourhood.',
+      'Dompe is a sold-out Myland project — a finished residential site with internal roads, drainage, and a settled neighbourhood.',
     description: [
       'Internal roads completed',
       'Plots handed over to owners',
@@ -160,7 +160,7 @@ export const WEBSITE_PROJECTS = [
     excerpt: 'A handed-over Kiribathgoda project close to town, now a settled residential pocket.',
     mapQuery: 'Kiribathgoda, Gampaha, Sri Lanka',
     overview:
-      'Kiribathgoda is a completed MyLand development — sold out, with roads and plots already in the hands of owners.',
+      'Kiribathgoda is a completed Myland development — sold out, with roads and plots already in the hands of owners.',
     description: [
       'Completed internal road network',
       'Plots handed over to owners',
