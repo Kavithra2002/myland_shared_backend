@@ -1,10 +1,10 @@
 export const openApiSpec = {
   openapi: '3.0.3',
   info: {
-    title: 'MyLand API',
+    title: 'Myland API',
     version: '1.0.0',
     description:
-      'Shared backend for the MyLand public site and admin dashboard. Use Try it out on each endpoint to send live requests.',
+      'Shared backend for the Myland public site and admin dashboard. Use Try it out on each endpoint to send live requests.',
   },
   servers: [
     {
@@ -21,7 +21,7 @@ export const openApiSpec = {
     { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
     { name: 'Inquiries', description: 'Project and contact-page inquiries from the public site' },
     { name: 'Favorites', description: 'Project heart counts from public visitors' },
-    { name: 'CRM', description: 'Contact notifications for the MyLand CRM' },
+    { name: 'CRM', description: 'Contact notifications for the Myland CRM' },
   ],
   paths: {
     '/api/health': {
@@ -757,9 +757,9 @@ export const openApiSpec = {
     '/api/crm/contacts': {
       get: {
         tags: ['CRM'],
-        summary: 'List new website contacts for the MyLand CRM',
+        summary: 'List new website contacts for the Myland CRM',
         description:
-          'Use this from the CRM to show notifications such as “a user on this number contacted MyLand”. Send the CRM API key in X-API-Key. Optional since=ISO date returns only newer rows.',
+          'Use this from the CRM to show notifications such as “a user on this number contacted Myland”. Send the CRM API key in X-API-Key. Optional since=ISO date returns only newer rows.',
         security: [{ CrmApiKey: [] }],
         parameters: [
           {
@@ -797,7 +797,7 @@ export const openApiSpec = {
                       project: 'Kirindivela – Serenity Park',
                       projectSlug: 'kirindivela-serenity-park',
                       notification:
-                        'A user on 0775558899 contacted MyLand via WhatsApp about Kirindivela – Serenity Park.',
+                        'A user on 0775558899 contacted Myland via WhatsApp about Kirindivela – Serenity Park.',
                       createdAt: '2026-09-17T08:11:48.255Z',
                     },
                   ],
