@@ -16,7 +16,7 @@ export function toCrmContact(inquiry) {
     ? String(inquiry.whatsapp || inquiry.phone || '').trim()
     : String(inquiry.phone || inquiry.whatsapp || '').trim();
   const channel = viaWa ? 'whatsapp' : 'call';
-  const project = inquiry.projectTitle || 'MyLand';
+  const project = inquiry.projectTitle || 'Myland';
   const via = channel === 'whatsapp' ? 'WhatsApp' : 'phone';
   return {
     id: inquiry.id,
@@ -24,7 +24,7 @@ export function toCrmContact(inquiry) {
     channel,
     project,
     projectSlug: inquiry.projectSlug || '',
-    notification: `A user on ${number || 'an unknown number'} contacted MyLand via ${via} about ${project}.`,
+    notification: `A user on ${number || 'an unknown number'} contacted Myland via ${via} about ${project}.`,
     createdAt: inquiry.createdAt,
   };
 }
