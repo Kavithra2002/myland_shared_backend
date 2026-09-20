@@ -211,7 +211,7 @@ const HOME_STORIES = [
     name: 'Nadeesha Perera',
     role: 'Homeowner, Malabe',
     message:
-      'MyLand made an overwhelming process feel simple — every document was explained before we signed anything.',
+      'Myland made an overwhelming process feel simple — every document was explained before we signed anything.',
     avatar: 'https://i.pravatar.cc/100?img=32',
     createdAt: '2026-07-12T08:00:00.000Z',
   },
@@ -220,7 +220,7 @@ const HOME_STORIES = [
     name: 'Ruwan Fernando',
     role: 'Investor, Kandy',
     message:
-      'I compared four agencies before choosing MyLand. Their site visit and follow-through were the most transparent by far.',
+      'I compared four agencies before choosing Myland. Their site visit and follow-through were the most transparent by far.',
     avatar: 'https://i.pravatar.cc/100?img=12',
     createdAt: '2026-07-18T08:00:00.000Z',
   },
@@ -253,6 +253,8 @@ async function migrateSchema() {
       WHERE idempotency_key IS NOT NULL;
     UPDATE reviews SET show_on_home = TRUE WHERE status = 'approved';
     UPDATE reviews SET show_on_home = FALSE WHERE status <> 'approved';
+    UPDATE reviews SET message = REPLACE(message, 'MyLand', 'Myland')
+     WHERE message LIKE '%MyLand%';
   `);
   await pool.query(`
     DO $$
