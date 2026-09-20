@@ -38,7 +38,7 @@ function transporter() {
   });
 }
 
-function wrapHtml({ heading, body, buttonLabel, buttonUrl, eyebrow = 'MyLand Admin' }) {
+function wrapHtml({ heading, body, buttonLabel, buttonUrl, eyebrow = 'Myland Admin' }) {
   const button = buttonUrl
     ? `<p style="margin:28px 0 8px">
         <a href="${buttonUrl}" style="display:inline-block;background:#c1121f;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 22px;border-radius:999px">
@@ -81,7 +81,7 @@ async function sendMail({ to, subject, text, html }) {
 }
 
 export async function sendSubscriberAlert(to, { subject, message } = {}) {
-  const heading = String(subject || 'New plots at MyLand').trim();
+  const heading = String(subject || 'New plots at Myland').trim();
   const text = String(message || '').trim();
   if (!to || !heading || !text) return false;
   const htmlBody = `<p style="margin:0;font-size:15px;line-height:1.7;white-space:pre-wrap">${text
@@ -95,7 +95,7 @@ export async function sendSubscriberAlert(to, { subject, message } = {}) {
       subject: heading,
       text,
       html: wrapHtml({
-        eyebrow: 'MyLand',
+        eyebrow: 'Myland',
         heading,
         body: htmlBody,
         buttonLabel: 'View listings',

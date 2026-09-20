@@ -128,7 +128,7 @@ app.use(
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
   explorer: true,
-  customSiteTitle: 'MyLand API docs',
+  customSiteTitle: 'Myland API docs',
 }));
 app.get('/api-docs.json', (_req, res) => {
   res.json(openApiSpec);
@@ -726,7 +726,7 @@ app.post('/api/newsletter/:id/send', requireAuth, async (req, res) => {
       res.status(404).json({ message: 'Subscriber not found.' });
       return;
     }
-    const subject = String(req.body.subject || 'New plots at MyLand').trim();
+    const subject = String(req.body.subject || 'New plots at Myland').trim();
     const message = String(req.body.message || '').trim();
     if (!subject || !message) {
       res.status(400).json({ message: 'Subject and message are required.' });
