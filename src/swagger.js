@@ -21,6 +21,7 @@ export const openApiSpec = {
     { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
     { name: 'Inquiries', description: 'Project and contact-page inquiries from the public site' },
     { name: 'Favorites', description: 'Project heart counts from public visitors' },
+    { name: 'Gallery', description: 'About page photo gallery' },
     { name: 'CRM', description: 'Contact notifications for the Myland CRM' },
   ],
   paths: {
@@ -941,6 +942,119 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/gallery': {
+      get: {
+        tags: ['Gallery'],
+        summary: 'Photos shown on the public About page',
+        responses: {
+          200: {
+            description: 'Current live gallery. Signed-in staff and admins also receive approval fields.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AboutGallery' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/gallery/submit': {
+      post: {
+        tags: ['Gallery'],
+        summary: 'Staff send About gallery changes to an admin for approval',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/SubmitGallery' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Gallery request is pending',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AboutGallery' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          401: { $ref: '#/components/responses/Error' },
+          403: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/gallery/review': {
+      post: {
+        tags: ['Gallery'],
+        summary: 'Admin approve or decline a gallery request',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ReviewGallery' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Reviewed gallery',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/AboutGallery' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          401: { $ref: '#/components/responses/Error' },
+          403: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/gallery/uploads': {
+      post: {
+        tags: ['Gallery'],
+        summary: 'Upload photos for the About gallery',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  files: {
+                    type: 'array',
+                    items: { type: 'string', format: 'binary' },
+                    maxItems: 12,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Uploaded file URLs',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    urls: { type: 'array', items: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          401: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
     '/api/favorites/summary': {
       get: {
         tags: ['Favorites'],
@@ -1331,6 +1445,41 @@ export const openApiSpec = {
         required: ['status'],
         properties: {
           status: { type: 'string', enum: ['new', 'in_progress', 'closed'] },
+        },
+      },
+      GalleryImage: {
+        type: 'object',
+        properties: {
+          src: { type: 'string' },
+          alt: { type: 'string' },
+        },
+      },
+      AboutGallery: {
+        type: 'object',
+        properties: {
+          images: { type: 'array', items: { $ref: '#/components/schemas/GalleryImage' } },
+          updatedAt: { type: 'string', format: 'date-time' },
+          approvalStatus: { type: 'string', enum: ['pending', 'approved', 'declined'] },
+          pendingImages: { type: 'array', items: { $ref: '#/components/schemas/GalleryImage' } },
+          requestedByName: { type: 'string' },
+          approverName: { type: 'string' },
+          approvalMessage: { type: 'string' },
+        },
+      },
+      SubmitGallery: {
+        type: 'object',
+        required: ['images', 'approverId'],
+        properties: {
+          images: { type: 'array', items: { $ref: '#/components/schemas/GalleryImage' } },
+          approverId: { type: 'integer' },
+        },
+      },
+      ReviewGallery: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['approved', 'declined'] },
+          message: { type: 'string' },
         },
       },
       CrmContact: {

@@ -87,6 +87,15 @@ import {
 } from './newsletter.js';
 import { sendSubscriberAlert } from './mail.js';
 import { notifyCrm, requireCrmKey, toCrmContact } from './crm.js';
+import {
+  ensureGalleryUploadDirs,
+  galleryUpload,
+  getAboutGallery,
+  migrateAboutGallerySchema,
+  reviewAboutGalleryChange,
+  seedAboutGalleryIfEmpty,
+  submitAboutGalleryChange,
+} from './aboutGallery.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -110,6 +119,7 @@ app.use(cors({ origin: corsOrigin() }));
 app.use(express.json({ limit: '2mb' }));
 ensureUploadDirs();
 ensureLandUploadDirs();
+ensureGalleryUploadDirs();
 app.use(
   '/api/uploads',
   express.static(uploadsRoot, {
@@ -117,7 +127,7 @@ app.use(
     lastModified: true,
     setHeaders(res, filePath) {
       const name = String(filePath || '').replace(/\\/g, '/').split('/').pop() || '';
-      if (/^(proj|land)-\d+-/.test(name)) {
+      if (/^(proj|land|gallery)-\d+-/.test(name)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return;
       }
@@ -746,6 +756,56 @@ app.post('/api/newsletter/:id/send', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/gallery', optionalAuth, async (req, res) => {
+  try {
+    const gallery = await getAboutGallery({ includePending: Boolean(req.user) });
+    res.json(gallery);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load gallery' });
+  }
+});
+
+app.post('/api/gallery/uploads', requireAuth, (req, res) => {
+  if (req.user?.role === 'admin') {
+    res.status(403).json({ message: 'Admins approve or decline gallery requests. They cannot edit the gallery.' });
+    return;
+  }
+  galleryUpload.array('files', 12)(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ message: err.message || 'Could not upload photos' });
+      return;
+    }
+    const urls = (req.files || []).map((file) => `/api/uploads/gallery/${file.filename}`);
+    res.json({ urls });
+  });
+});
+
+app.post('/api/gallery/submit', requireAuth, async (req, res) => {
+  try {
+    const gallery = await submitAboutGalleryChange(req.body, { actor: req.user });
+    res.status(201).json(gallery);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not send for approval' });
+  }
+});
+
+app.post('/api/gallery/review', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const gallery = await reviewAboutGalleryChange(req.body, { actor: req.user });
+    res.json(gallery);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not review gallery' });
+  }
+});
+
+app.put('/api/gallery', requireAuth, async (req, res) => {
+  const message =
+    req.user?.role === 'admin'
+      ? 'Admins approve or decline gallery requests. They cannot edit the gallery.'
+      : 'Send gallery changes to an admin for approval.';
+  res.status(403).json({ message });
+});
+
 app.get('/api/projects', optionalAuth, async (req, res) => {
   try {
     const all = req.query.all === 'true' && Boolean(req.user);
@@ -844,6 +904,8 @@ async function start() {
     await migrateFavoritesSchema();
     await migrateNewsletterSchema();
     await seedTestSubscribers();
+    await migrateAboutGallerySchema();
+    await seedAboutGalleryIfEmpty();
   } catch (err) {
     console.error(err.message);
   }

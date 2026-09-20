@@ -184,3 +184,58 @@ export async function notifyListingReviewed(project, { actor, decision } = {}) {
     })
   );
 }
+
+export async function notifyGallerySubmitted(gallery, { actor } = {}) {
+  const to = gallery?.approverEmail;
+  if (!to) return;
+  const requester = actor?.name || gallery?.requestedByName || 'A staff user';
+  const listingsUrl = `${adminAppUrl()}/listings`;
+  const count = Array.isArray(gallery?.pendingImages) ? gallery.pendingImages.length : 0;
+  const text = `${requester} sent About gallery changes (${count} photos) to you for approval.\n\nOpen Manage Listings to approve or decline:\n${listingsUrl}`;
+  await safeSend(() =>
+    sendMail({
+      to,
+      subject: 'Gallery approval needed: About page',
+      text,
+      html: wrapHtml({
+        heading: 'The About gallery is waiting for your approval',
+        buttonLabel: 'Review gallery',
+        buttonUrl: listingsUrl,
+        body: `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${requester} sent About gallery changes (${count} photos).</p>
+          <p style="margin:0;font-size:15px;line-height:1.6">The public website will not change until you approve it in Manage Listings.</p>`,
+      }),
+    })
+  );
+}
+
+export async function notifyGalleryReviewed(gallery, { actor, decision } = {}) {
+  const to = gallery?.requestedByEmail;
+  if (!to) return;
+  const adminName = actor?.name || gallery?.approverName || 'An admin';
+  const listingsUrl = `${adminAppUrl()}/listings`;
+  const approved = decision === 'approved';
+  const note = String(gallery?.approvalMessage || '').trim();
+  const subject = approved ? 'Your About gallery was approved' : 'Your About gallery request was declined';
+  const text = approved
+    ? `${adminName} approved the About gallery. The public page now uses these photos.\n\n${listingsUrl}`
+    : `${adminName} declined the About gallery.${note ? `\n\nMessage: ${note}` : ''}\n\nYou can edit it and send it again:\n${listingsUrl}`;
+  await safeSend(() =>
+    sendMail({
+      to,
+      subject,
+      text,
+      html: wrapHtml({
+        heading: approved ? 'Your gallery changes were approved' : 'Your gallery request was declined',
+        buttonLabel: 'Open listings',
+        buttonUrl: listingsUrl,
+        body: approved
+          ? `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${adminName} approved the About gallery.</p>
+             <p style="margin:0;font-size:15px;line-height:1.6">The public About page now uses these photos.</p>
+             ${note ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.6;color:#5c534d">Note from admin: ${note}</p>` : ''}`
+          : `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${adminName} declined the About gallery. The live gallery is unchanged.</p>
+             ${note ? `<p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#5c534d">Message: ${note}</p>` : ''}
+             <p style="margin:0;font-size:15px;line-height:1.6">You can edit the gallery and send it for approval again.</p>`,
+      }),
+    })
+  );
+}
