@@ -234,6 +234,21 @@ export async function migrateProjectsSchema() {
   ensureUploadDirs();
   await pool.query(CREATE_SQL);
   await pool.query(`
+    UPDATE projects
+       SET excerpt = REPLACE(excerpt, 'MyLand', 'Myland'),
+           overview = REPLACE(overview, 'MyLand', 'Myland'),
+           description = ARRAY(
+             SELECT REPLACE(item, 'MyLand', 'Myland')
+               FROM unnest(COALESCE(description, ARRAY[]::text[])) AS item
+           )
+     WHERE excerpt LIKE '%MyLand%'
+        OR overview LIKE '%MyLand%'
+        OR EXISTS (
+             SELECT 1 FROM unnest(COALESCE(description, ARRAY[]::text[])) AS item
+              WHERE item LIKE '%MyLand%'
+           );
+  `);
+  await pool.query(`
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS pending_action TEXT NOT NULL DEFAULT 'none';
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS pending_payload JSONB;
