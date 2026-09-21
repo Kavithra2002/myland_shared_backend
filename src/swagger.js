@@ -18,6 +18,7 @@ export const openApiSpec = {
     { name: 'Users', description: 'Admin user management (soft delete)' },
     { name: 'Reviews', description: 'Project reviews and moderation' },
     { name: 'Blogs', description: 'Journal posts and placement' },
+    { name: 'Settings', description: 'Public site switches controlled from the admin dashboard' },
     { name: 'Land updates', description: 'Sell-your-land submissions from the public site' },
     { name: 'Inquiries', description: 'Project and contact-page inquiries from the public site' },
     { name: 'Favorites', description: 'Project heart counts from public visitors' },
@@ -357,6 +358,52 @@ export const openApiSpec = {
             },
           },
           404: { $ref: '#/components/responses/Error' },
+          500: { $ref: '#/components/responses/Error' },
+        },
+      },
+    },
+    '/api/site-settings': {
+      get: {
+        tags: ['Settings'],
+        summary: 'Get public site switches',
+        responses: {
+          200: {
+            description: 'Site settings',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SiteSettings' },
+                example: { blogPageEnabled: true },
+              },
+            },
+          },
+          500: { $ref: '#/components/responses/Error' },
+        },
+      },
+      patch: {
+        tags: ['Settings'],
+        summary: 'Update public site switches',
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateSiteSettings' },
+              example: { blogPageEnabled: false },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Updated settings',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SiteSettings' },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/Error' },
+          401: { $ref: '#/components/responses/Error' },
+          403: { $ref: '#/components/responses/Error' },
           500: { $ref: '#/components/responses/Error' },
         },
       },
@@ -1452,6 +1499,22 @@ export const openApiSpec = {
         properties: {
           src: { type: 'string' },
           alt: { type: 'string' },
+        },
+      },
+      SiteSettings: {
+        type: 'object',
+        properties: {
+          blogPageEnabled: {
+            type: 'boolean',
+            description: 'When false, the public blog page and admin Blog Listing are hidden.',
+          },
+        },
+      },
+      UpdateSiteSettings: {
+        type: 'object',
+        required: ['blogPageEnabled'],
+        properties: {
+          blogPageEnabled: { type: 'boolean' },
         },
       },
       AboutGallery: {
