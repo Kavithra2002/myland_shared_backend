@@ -96,6 +96,12 @@ import {
   seedAboutGalleryIfEmpty,
   submitAboutGalleryChange,
 } from './aboutGallery.js';
+import {
+  getSiteSettings,
+  isBlogPageEnabled,
+  migrateSiteSettingsSchema,
+  updateSiteSettings,
+} from './siteSettings.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -355,29 +361,63 @@ app.delete('/api/reviews/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/site-settings', async (_req, res) => {
+  try {
+    const settings = await getSiteSettings();
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not load site settings' });
+  }
+});
+
+app.patch('/api/site-settings', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    if (typeof req.body?.blogPageEnabled !== 'boolean') {
+      res.status(400).json({ message: 'blogPageEnabled must be true or false.' });
+      return;
+    }
+    const settings = await updateSiteSettings({
+      blogPageEnabled: req.body.blogPageEnabled,
+    });
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Could not update site settings' });
+  }
+});
+
 app.get('/api/blogs', optionalAuth, async (req, res) => {
   try {
+    const blogPageEnabled = await isBlogPageEnabled();
+    if (!blogPageEnabled && !req.user) {
+      res.json({ blogs: [], blogPageEnabled: false });
+      return;
+    }
     const publishedParam = req.query.published;
     let published;
     if (publishedParam === 'true') published = true;
     else if (publishedParam === 'false') published = req.user ? false : true;
     else published = req.user ? undefined : true;
     const blogs = await listBlogs({ published });
-    res.json({ blogs });
+    res.json({ blogs, blogPageEnabled });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not load blogs' });
   }
 });
 
-app.get('/api/blogs/:idOrSlug', async (req, res) => {
+app.get('/api/blogs/:idOrSlug', optionalAuth, async (req, res) => {
   try {
+    const blogPageEnabled = await isBlogPageEnabled();
+    if (!blogPageEnabled && !req.user) {
+      res.status(404).json({ message: 'Blog page is not available.', blogPageEnabled: false });
+      return;
+    }
     const publicOnly = req.query.public !== 'false';
     const blog = await getBlog(req.params.idOrSlug, { publicOnly });
     if (!blog) {
       res.status(404).json({ message: 'Blog not found.' });
       return;
     }
-    res.json({ blog });
+    res.json({ blog, blogPageEnabled });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Could not load blog' });
   }
@@ -906,6 +946,7 @@ async function start() {
     await seedTestSubscribers();
     await migrateAboutGallerySchema();
     await seedAboutGalleryIfEmpty();
+    await migrateSiteSettingsSchema();
   } catch (err) {
     console.error(err.message);
   }
