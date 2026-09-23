@@ -102,6 +102,7 @@ import {
   migrateSiteSettingsSchema,
   updateSiteSettings,
 } from './siteSettings.js';
+import { buildSitemapXml, buildRobotsTxt } from './sitemap.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -157,6 +158,30 @@ app.get('/api/health', async (_req, res) => {
   } catch {
     res.status(503).json({ ok: false, db: 'not connected' });
   }
+});
+
+async function sendSitemap(_req, res) {
+  try {
+    const [projects, blogPageEnabled] = await Promise.all([
+      listProjects({ includeUnpublished: false }),
+      isBlogPageEnabled(),
+    ]);
+    const blogs = blogPageEnabled ? await listBlogs({ published: true }) : [];
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(buildSitemapXml({ projects, blogs, blogPageEnabled }));
+  } catch (err) {
+    res.status(500).type('text/plain').send('Could not build sitemap');
+  }
+}
+
+app.get('/sitemap.xml', sendSitemap);
+app.get('/api/sitemap.xml', sendSitemap);
+
+app.get(['/robots.txt', '/api/robots.txt'], (_req, res) => {
+  res.type('text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(buildRobotsTxt());
 });
 
 app.post('/api/auth/login', async (req, res) => {
