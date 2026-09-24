@@ -18,13 +18,16 @@ export function toCrmContact(inquiry) {
   const channel = viaWa ? 'whatsapp' : 'call';
   const project = inquiry.projectTitle || 'Myland';
   const via = channel === 'whatsapp' ? 'WhatsApp' : 'phone';
+  const name = String(inquiry.name || '').trim();
+  const who = name && name !== '-' ? name : 'A user';
   return {
     id: inquiry.id,
+    name: who === 'A user' ? '' : name,
     number,
     channel,
     project,
     projectSlug: inquiry.projectSlug || '',
-    notification: `A user on ${number || 'an unknown number'} contacted Myland via ${via} about ${project}.`,
+    notification: `${who} on ${number || 'an unknown number'} contacted Myland via ${via} about ${project}.`,
     createdAt: inquiry.createdAt,
   };
 }
