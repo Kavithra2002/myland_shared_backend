@@ -82,7 +82,7 @@ export function validateInquiryInput(body) {
     : projectSlug
       ? 'project'
       : 'contact';
-  const name = String(body.name || '').trim() || (source === 'whatsapp' ? '-' : '');
+  const name = String(body.name || '').trim();
   const phoneRaw = cleanNumber(body.phone || body.contactNumber);
   const whatsappRaw = cleanNumber(body.whatsapp);
   const email = String(body.email || '').trim();
@@ -97,6 +97,7 @@ export function validateInquiryInput(body) {
   const waDigits = whatsappRaw.replace(/\D/g, '');
 
   if (source === 'whatsapp') {
+    if (!name || name.length < 2) return { error: 'Please enter your name.' };
     if (waDigits.length < 9 && phoneDigits.length < 9) {
       return { error: 'Please enter a valid WhatsApp number.' };
     }
