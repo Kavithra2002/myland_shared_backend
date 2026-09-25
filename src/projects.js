@@ -20,7 +20,7 @@ const LISTING_TYPES = ['Residential Lands', 'Commercial Lands'];
 
 const PROJECT_COLUMNS = `id, slug, title, location, district, listing_type, country, category,
   property_type, phase, listing_status, badges, price, price_from, land_area, excerpt, overview,
-  description, image_url, gallery, plot_plan_url, video_url, map_query, show_on_projects,
+  description, image_url, gallery, plot_plan_url, video_url, video_thumbnail_url, map_query, show_on_projects,
   published, row_status, created_at, updated_at, approval_status, pending_action, pending_payload,
   approver_id, requested_by, approval_message, requested_at, reviewed_at`;
 
@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS projects (
   gallery JSONB NOT NULL DEFAULT '[]',
   plot_plan_url TEXT,
   video_url TEXT NOT NULL DEFAULT '',
+  video_thumbnail_url TEXT NOT NULL DEFAULT '',
   map_query TEXT NOT NULL DEFAULT '',
   show_on_projects BOOLEAN NOT NULL DEFAULT TRUE,
   published BOOLEAN NOT NULL DEFAULT TRUE,
@@ -189,6 +190,8 @@ export function mapProject(row) {
     gallery,
     plotPlan: row.plot_plan_url || undefined,
     videoUrl: row.video_url || '',
+    videoThumbnail: row.video_thumbnail_url || '',
+    videoThumbnailUrl: row.video_thumbnail_url || '',
     mapQuery: row.map_query || row.location || '',
     showOnProjects: Boolean(row.show_on_projects),
     published: Boolean(row.published),
@@ -257,6 +260,7 @@ export async function migrateProjectsSchema() {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS approval_message TEXT;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS video_thumbnail_url TEXT NOT NULL DEFAULT '';
   `);
 }
 
@@ -383,6 +387,10 @@ function normalizePayload(body, current = {}) {
     gallery: photos,
     plotPlanUrl: String(body.plotPlan || body.plotPlanUrl || current.plotPlan || '').trim() || null,
     videoUrl: body.videoUrl != null ? String(body.videoUrl).trim() : String(current.videoUrl || '').trim(),
+    videoThumbnailUrl:
+      body.videoThumbnailUrl != null || body.videoThumbnail != null
+        ? String(body.videoThumbnailUrl || body.videoThumbnail || '').trim()
+        : String(current.videoThumbnailUrl || current.videoThumbnail || '').trim(),
     mapQuery: String(body.mapQuery ?? current.mapQuery ?? body.location ?? current.location ?? '').trim(),
     showOnProjects: body.showOnProjects != null ? Boolean(body.showOnProjects) : current.showOnProjects !== false,
     published: body.published != null ? Boolean(body.published) : current.published !== false,
@@ -429,13 +437,13 @@ export async function createProject(body) {
       `INSERT INTO projects (
          id, slug, title, location, district, listing_type, country, category, property_type,
          phase, listing_status, badges, price, price_from, land_area, excerpt, overview,
-         description, image_url, gallery, plot_plan_url, video_url, map_query, show_on_projects,
+         description, image_url, gallery, plot_plan_url, video_url, video_thumbnail_url, map_query, show_on_projects,
          published, row_status
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          $10, $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, $20::jsonb, $21, $22, $23, $24,
-         $25, $26
+         $18, $19, $20::jsonb, $21, $22, $23, $24, $25,
+         $26, $27
        )
        RETURNING ${PROJECT_COLUMNS}`,
       [
@@ -461,6 +469,7 @@ export async function createProject(body) {
         JSON.stringify(data.gallery),
         data.plotPlanUrl,
         data.videoUrl,
+        data.videoThumbnailUrl,
         data.mapQuery,
         data.showOnProjects,
         data.published,
@@ -506,10 +515,11 @@ export async function updateProject(id, body) {
          gallery = $20::jsonb,
          plot_plan_url = $21,
          video_url = $22,
-         map_query = $23,
-         show_on_projects = $24,
-         published = $25,
-         row_status = $26,
+         video_thumbnail_url = $23,
+         map_query = $24,
+         show_on_projects = $25,
+         published = $26,
+         row_status = $27,
          updated_at = NOW()
        WHERE id = $1
        RETURNING ${PROJECT_COLUMNS}`,
@@ -536,6 +546,7 @@ export async function updateProject(id, body) {
         JSON.stringify(data.gallery),
         data.plotPlanUrl,
         data.videoUrl,
+        data.videoThumbnailUrl,
         data.mapQuery,
         data.showOnProjects,
         data.published,
@@ -597,6 +608,8 @@ function changePayload(input = {}) {
     'plotPlan',
     'plotPlanUrl',
     'videoUrl',
+    'videoThumbnail',
+    'videoThumbnailUrl',
     'mapQuery',
     'showOnProjects',
     'published',
