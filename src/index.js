@@ -470,6 +470,13 @@ function validateBlogPayload(body, { partial = false } = {}) {
   if (body.layout != null && !['auto', 'image-left', 'image-right'].includes(body.layout)) {
     return 'Invalid layout.';
   }
+  if (
+    body.imageOrientation != null &&
+    body.imageOrientation !== '' &&
+    !['landscape', 'portrait'].includes(body.imageOrientation)
+  ) {
+    return 'Choose landscape or portrait for the cover photo.';
+  }
   if (body.placement != null && !['cover', 'features', 'index'].includes(body.placement)) {
     return 'Invalid blog section.';
   }

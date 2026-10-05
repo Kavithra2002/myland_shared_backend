@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS blogs (
   body TEXT NOT NULL DEFAULT '',
   topic TEXT NOT NULL DEFAULT 'Journal',
   image_url TEXT NOT NULL,
+  image_orientation TEXT,
   read_time TEXT NOT NULL DEFAULT '3 min read',
   featured BOOLEAN NOT NULL DEFAULT FALSE,
   layout TEXT NOT NULL DEFAULT 'auto'

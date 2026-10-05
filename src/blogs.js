@@ -2,12 +2,12 @@ import { pool } from './db.js';
 import { displayImageUrl, resolveStoredImageUrl } from './imageUrls.js';
 import { findUserById } from './users.js';
 
-const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, read_time,
+const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, image_orientation, read_time,
   featured, layout, sort_order, published, published_at, created_at, updated_at,
   placement, status, approval_status, pending_action, pending_payload,
   approver_id, requested_by, approval_message, requested_at, reviewed_at`;
 
-const BLOG_SELECT = `b.id, b.slug, b.title, b.excerpt, b.body, b.topic, b.image_url, b.read_time,
+const BLOG_SELECT = `b.id, b.slug, b.title, b.excerpt, b.body, b.topic, b.image_url, b.image_orientation, b.read_time,
   b.featured, b.layout, b.sort_order, b.published, b.published_at, b.created_at, b.updated_at,
   b.placement, b.status, b.approval_status, b.pending_action, b.pending_payload,
   b.approver_id, b.requested_by, b.approval_message, b.requested_at, b.reviewed_at,
@@ -198,6 +198,10 @@ function parsePayload(value) {
   return payload;
 }
 
+function imageOrientation(value) {
+  return value === 'portrait' || value === 'landscape' ? value : null;
+}
+
 function httpError(message, statusCode) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -218,6 +222,7 @@ function mapBlog(row) {
     topic: row.topic,
     image: displayImageUrl(row.image_url),
     imageUrl: displayImageUrl(row.image_url),
+    imageOrientation: imageOrientation(row.image_orientation),
     readTime: row.read_time,
     featured: Boolean(row.featured),
     layout: row.layout || 'auto',
@@ -264,6 +269,10 @@ export async function migrateBlogsSchema() {
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS approval_message TEXT;
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
     ALTER TABLE blogs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+    ALTER TABLE blogs ADD COLUMN IF NOT EXISTS image_orientation TEXT;
+    ALTER TABLE blogs DROP CONSTRAINT IF EXISTS blogs_image_orientation_check;
+    ALTER TABLE blogs ADD CONSTRAINT blogs_image_orientation_check
+      CHECK (image_orientation IS NULL OR image_orientation IN ('landscape', 'portrait'));
   `);
   await pool.query(`
     UPDATE blogs
@@ -478,6 +487,7 @@ export async function createBlog(input, { actorRole } = {}) {
   const body = String(input.body || '').trim();
   const topic = String(input.topic || 'Journal').trim() || 'Journal';
   const imageUrl = await resolveStoredImageUrl(input.imageUrl || input.image || '');
+  const orientation = imageOrientation(input.imageOrientation);
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
     : 'auto';
@@ -496,10 +506,10 @@ export async function createBlog(input, { actorRole } = {}) {
 
   const { rows } = await pool.query(
     `INSERT INTO blogs (
-       id, slug, title, excerpt, body, topic, image_url, read_time,
+       id, slug, title, excerpt, body, topic, image_url, image_orientation, read_time,
        featured, layout, sort_order, published, published_at, created_at, updated_at,
        placement, status
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW(), $14, 'active')
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW(), $15, 'active')
      RETURNING ${BLOG_COLUMNS}`,
     [
       id,
@@ -509,6 +519,7 @@ export async function createBlog(input, { actorRole } = {}) {
       body,
       topic,
       imageUrl,
+      orientation,
       readTime,
       featured,
       layout,
@@ -537,6 +548,10 @@ export async function updateBlog(id, input, { actorRole } = {}) {
     input.imageUrl != null || input.image != null
       ? await resolveStoredImageUrl(input.imageUrl || input.image)
       : current.image;
+  const orientation =
+    input.imageOrientation != null
+      ? imageOrientation(input.imageOrientation)
+      : imageOrientation(current.imageOrientation);
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
     : current.layout;
@@ -571,14 +586,15 @@ export async function updateBlog(id, input, { actorRole } = {}) {
        body = $5,
        topic = $6,
        image_url = $7,
-       read_time = $8,
-       featured = $9,
-       layout = $10,
-       sort_order = $11,
-       published = $12,
-       published_at = $13,
-       placement = $14,
-       status = $15,
+       image_orientation = $8,
+       read_time = $9,
+       featured = $10,
+       layout = $11,
+       sort_order = $12,
+       published = $13,
+       published_at = $14,
+       placement = $15,
+       status = $16,
        updated_at = NOW()
      WHERE id = $1
      RETURNING ${BLOG_COLUMNS}`,
@@ -590,6 +606,7 @@ export async function updateBlog(id, input, { actorRole } = {}) {
       body,
       topic,
       imageUrl,
+      orientation,
       readTime,
       featured,
       layout,
@@ -655,6 +672,7 @@ function changePayload(input = {}) {
   if (input.imageUrl != null || input.image != null) {
     payload.imageUrl = String(input.imageUrl || input.image || '').trim();
   }
+  if (input.imageOrientation != null) payload.imageOrientation = imageOrientation(input.imageOrientation);
   if (input.readTime != null) payload.readTime = String(input.readTime).trim();
   if (input.layout != null) payload.layout = input.layout;
   if (input.placement != null) payload.placement = input.placement;
