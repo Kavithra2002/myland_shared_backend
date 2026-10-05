@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { displayImageUrl, resolveStoredImageUrl } from './imageUrls.js';
 import { findUserById } from './users.js';
 
 const BLOG_COLUMNS = `id, slug, title, excerpt, body, topic, image_url, read_time,
@@ -184,12 +185,17 @@ export function slugify(title) {
 
 function parsePayload(value) {
   if (!value) return null;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+  const payload = typeof value === 'object' ? { ...value } : (() => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  })();
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.imageUrl) payload.imageUrl = displayImageUrl(payload.imageUrl);
+  if (payload.image) payload.image = displayImageUrl(payload.image);
+  return payload;
 }
 
 function httpError(message, statusCode) {
@@ -210,8 +216,8 @@ function mapBlog(row) {
     excerpt: row.excerpt,
     body: row.body || '',
     topic: row.topic,
-    image: row.image_url,
-    imageUrl: row.image_url,
+    image: displayImageUrl(row.image_url),
+    imageUrl: displayImageUrl(row.image_url),
     readTime: row.read_time,
     featured: Boolean(row.featured),
     layout: row.layout || 'auto',
@@ -471,7 +477,7 @@ export async function createBlog(input, { actorRole } = {}) {
   const excerpt = String(input.excerpt || '').trim();
   const body = String(input.body || '').trim();
   const topic = String(input.topic || 'Journal').trim() || 'Journal';
-  const imageUrl = String(input.imageUrl || input.image || '').trim();
+  const imageUrl = await resolveStoredImageUrl(input.imageUrl || input.image || '');
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
     : 'auto';
@@ -529,7 +535,7 @@ export async function updateBlog(id, input, { actorRole } = {}) {
   const topic = input.topic != null ? String(input.topic).trim() || 'Journal' : current.topic;
   const imageUrl =
     input.imageUrl != null || input.image != null
-      ? String(input.imageUrl || input.image).trim()
+      ? await resolveStoredImageUrl(input.imageUrl || input.image)
       : current.image;
   const layout = ['auto', 'image-left', 'image-right'].includes(input.layout)
     ? input.layout
@@ -692,13 +698,14 @@ export async function submitBlogChange(input, { actor } = {}) {
     ? input.action
     : 'update';
   const payload = changePayload(input.payload || input);
+  if (payload.imageUrl) payload.imageUrl = await resolveStoredImageUrl(payload.imageUrl);
 
   if (action === 'create') {
     if (!payload.title || payload.title.length < 3) throw httpError('Please enter a title.', 400);
     if (!payload.excerpt || payload.excerpt.length < 8) {
       throw httpError('Please write a short excerpt.', 400);
     }
-    if (!payload.imageUrl) throw httpError('Please add a cover image URL.', 400);
+    if (!payload.imageUrl) throw httpError('Please add a cover image.', 400);
     const blog = await createBlog({ ...payload, published: false }, { actorRole: 'user' });
     await markPending(blog.id, {
       action: 'create',

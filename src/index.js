@@ -47,6 +47,7 @@ import {
   submitProjectChange,
   uploadsRoot,
 } from './projects.js';
+import { blogUpload, ensureBlogUploadDir, resolveStoredImageUrl, uploadErrorMessage } from './imageUrls.js';
 import {
   createLandUpdate,
   deleteLandUpdate,
@@ -127,6 +128,7 @@ app.use(express.json({ limit: '2mb' }));
 ensureUploadDirs();
 ensureLandUploadDirs();
 ensureGalleryUploadDirs();
+ensureBlogUploadDir();
 app.use(
   '/api/uploads',
   express.static(uploadsRoot, {
@@ -134,7 +136,7 @@ app.use(
     lastModified: true,
     setHeaders(res, filePath) {
       const name = String(filePath || '').replace(/\\/g, '/').split('/').pop() || '';
-      if (/^(proj|land|gallery)-\d+-/.test(name)) {
+      if (/^(proj|land|gallery|blog)-\d+-/.test(name)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return;
       }
@@ -460,10 +462,10 @@ function validateBlogPayload(body, { partial = false } = {}) {
     if (!excerpt || excerpt.length < 8) return 'Please write a short excerpt.';
   }
   if (!partial || body.imageUrl != null || body.image != null) {
-    if (!partial && !imageUrl) return 'Please add a cover image URL.';
-    if ((body.imageUrl != null || body.image != null) && imageUrl && imageUrl.length < 8) {
-      return 'Please add a valid image URL.';
-    }
+    if (!imageUrl) return 'Please add a cover image.';
+    const localUpload = imageUrl.startsWith('/api/uploads/');
+    const remoteImage = /^https?:\/\//i.test(imageUrl) && imageUrl.length >= 8;
+    if (!localUpload && !remoteImage) return 'Please add a valid image.';
   }
   if (body.layout != null && !['auto', 'image-left', 'image-right'].includes(body.layout)) {
     return 'Invalid layout.';
@@ -473,6 +475,33 @@ function validateBlogPayload(body, { partial = false } = {}) {
   }
   return null;
 }
+
+app.post('/api/blogs/uploads', requireAuth, (req, res) => {
+  blogUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ message: uploadErrorMessage(err) });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ message: 'Choose an image file.' });
+      return;
+    }
+    res.json({ url: `/api/uploads/blogs/${req.file.filename}` });
+  });
+});
+
+app.post('/api/blogs/import-image', requireAuth, async (req, res) => {
+  try {
+    const url = await resolveStoredImageUrl(req.body?.url);
+    if (!url) {
+      res.status(400).json({ message: 'Paste an image link or a Google Drive file link.' });
+      return;
+    }
+    res.json({ url });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not use that image link' });
+  }
+});
 
 app.post('/api/blogs', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -484,7 +513,7 @@ app.post('/api/blogs', requireAuth, requireAdmin, async (req, res) => {
     const blog = await createBlog(req.body, { actorRole: req.user.role });
     res.status(201).json({ blog });
   } catch (err) {
-    res.status(500).json({ message: err.message || 'Could not create blog' });
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not create blog' });
   }
 });
 
@@ -530,7 +559,7 @@ app.patch('/api/blogs/:id', requireAuth, requireAdmin, async (req, res) => {
     }
     res.json({ blog });
   } catch (err) {
-    res.status(500).json({ message: err.message || 'Could not update blog' });
+    res.status(err.statusCode || 500).json({ message: err.message || 'Could not update blog' });
   }
 });
 
